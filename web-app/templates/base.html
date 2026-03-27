@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Qwen Studio{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='/css/main.css') }}">
+    <!-- HTMX -->
+    <script src="https://unpkg.com/htmx.org@1.9.12" defer></script>
+</head>
+<body>
+    <nav class="nav">
+        <a href="/" class="nav-brand">Qwen Studio</a>
+        <div class="nav-links">
+            <a href="/image">Image</a>
+            <a href="/chat">Chat</a>
+            <a href="/notebook">Notebook</a>
+            <a href="/agents">Agents</a>
+            <a href="/skills">Skills</a>
+            <a href="/finetune">Fine-tune</a>
+            <a href="/settings">Settings</a>
+        </div>
+        <div class="server-status">
+            <span
+                id="image-server-status"
+                hx-get="/status/image"
+                hx-trigger="load, every 5s"
+                hx-swap="outerHTML"
+            >⏳ image</span>
+            <span
+                id="text-server-status"
+                hx-get="/status/text"
+                hx-trigger="load, every 5s"
+                hx-swap="outerHTML"
+            >⏳ text</span>
+        </div>
+    </nav>
+    <main class="main-content">
+        {% block content %}{% endblock %}
+    </main>
+</body>
+</html>

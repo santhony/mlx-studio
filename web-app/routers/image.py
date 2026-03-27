@@ -9,10 +9,11 @@ Returns HTMX-swappable HTML fragments.
 import base64
 import sqlite3
 from datetime import datetime, timezone
+from html import escape
 from pathlib import Path
 
 import httpx
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.templating import Jinja2Templates
 
@@ -90,10 +91,11 @@ async def generate(request: Request):
     conn.commit()
 
     # Return a gallery card fragment to be prepended by HTMX
+    escaped_prompt = escape(prompt)
     return HTMLResponse(f"""
 <div class="gallery-item">
-    <img src="data:image/png;base64,{b64}" alt="{prompt}">
-    <div class="caption">{prompt}</div>
+    <img src="data:image/png;base64,{b64}" alt="{escaped_prompt}">
+    <div class="caption">{escaped_prompt}</div>
 </div>
 """)
 
@@ -103,11 +105,9 @@ async def serve_image(filename: str, request: Request):
     """Serve a saved image by filename."""
     # Reject any path traversal attempts
     if "/" in filename or ".." in filename:
-        from fastapi import HTTPException
         raise HTTPException(status_code=400, detail="invalid filename")
     studio_root = request.app.state.studio_root
     path = _images_dir(studio_root) / filename
     if not path.exists():
-        from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="image not found")
     return FileResponse(str(path), media_type="image/png")

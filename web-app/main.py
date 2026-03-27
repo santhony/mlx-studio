@@ -22,6 +22,7 @@ from fastapi.templating import Jinja2Templates
 
 from db import get_connection, init_schema
 from routers import image as image_router
+from routers import chat as chat_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -64,6 +65,7 @@ app = FastAPI(title="Qwen Studio", lifespan=lifespan)
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 app.include_router(image_router.router)
+app.include_router(chat_router.router)
 
 
 # ── Health / status endpoints ─────────────────────────────────────────────────

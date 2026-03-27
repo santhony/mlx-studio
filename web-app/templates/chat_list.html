@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Chat — Qwen Studio{% endblock %}
+{% block content %}
+<h1>Chat</h1>
+
+<div class="card">
+    <form method="post" action="/chat/sessions" style="display: flex; gap: 0.75rem; align-items: flex-end;">
+        <div class="form-group" style="flex: 1">
+            <label for="name">Session name (optional)</label>
+            <input type="text" id="name" name="name" placeholder="New chat">
+        </div>
+        <button type="submit">New Session</button>
+    </form>
+</div>
+
+{% if sessions %}
+<div>
+    {% for session in sessions %}
+    <div class="card" style="display: flex; align-items: center; justify-content: space-between; padding: 1rem 1.5rem; margin-bottom: 0.5rem;">
+        <a href="/chat/{{ session.id }}" style="color: var(--text); text-decoration: none; flex: 1;">
+            <strong>{{ session.name }}</strong>
+            <span style="color: var(--text-muted); font-size: 0.8rem; margin-left: 1rem;">{{ session.updated_at }}</span>
+        </a>
+        <form method="post" action="/chat/sessions/{{ session.id }}?_method=DELETE" style="margin: 0;">
+            <input type="hidden" name="_method" value="DELETE">
+            <button type="submit" class="secondary" style="padding: 0.25rem 0.75rem; font-size: 0.8rem;">Delete</button>
+        </form>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<p style="color: var(--text-muted)">No sessions yet. Create one above.</p>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}{{ session.name }} — Chat — Qwen Studio{% endblock %}
+{% block content %}
+<div style="display: flex; gap: 1.5rem; height: calc(100vh - 120px);">
+
+    <!-- Sidebar: session list -->
+    <div style="width: 220px; flex-shrink: 0; overflow-y: auto;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+            <h2 style="margin: 0;">Sessions</h2>
+            <a href="/chat/" style="font-size: 0.8rem; color: var(--accent);">+ New</a>
+        </div>
+        {% for s in sessions %}
+        <a href="/chat/{{ s.id }}"
+           style="display: block; padding: 0.5rem 0.75rem; border-radius: var(--radius); text-decoration: none;
+                  color: {% if s.id == session.id %}var(--text){% else %}var(--text-muted){% endif %};
+                  background: {% if s.id == session.id %}var(--surface){% else %}transparent{% endif %};
+                  border: 1px solid {% if s.id == session.id %}var(--border){% else %}transparent{% endif %};
+                  margin-bottom: 0.25rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+            {{ s.name }}
+        </a>
+        {% endfor %}
+    </div>
+
+    <!-- Main chat area -->
+    <div style="flex: 1; display: flex; flex-direction: column; min-width: 0;">
+        <h1 style="margin-bottom: 1rem;">{{ session.name }}</h1>
+
+        <!-- Messages -->
+        <div id="messages"
+             style="flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 0.75rem;
+                    padding: 0.5rem 0; margin-bottom: 1rem;">
+            {% for msg in messages %}
+            <div class="msg msg-{{ msg.role }}">
+                <div class="msg-content">{{ msg.content }}</div>
+            </div>
+            {% else %}
+            <p style="color: var(--text-muted); text-align: center; margin: auto;">
+                Start the conversation below.
+            </p>
+            {% endfor %}
+        </div>
+
+        <!-- Input form -->
+        <div class="card" style="margin-bottom: 0; padding: 1rem;">
+            <form
+                hx-post="/chat/{{ session.id }}/send"
+                hx-target="#messages"
+                hx-swap="beforeend"
+                hx-on::after-request="this.reset(); document.getElementById('messages').scrollTop = 99999"
+            >
+                <div class="form-row" style="margin-bottom: 0;">
+                    <div class="form-group">
+                        <textarea
+                            name="content"
+                            placeholder="Ask anything..."
+                            rows="2"
+                            style="resize: none;"
+                            onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault(); this.form.requestSubmit();}"
+                        ></textarea>
+                    </div>
+                    <button type="submit">Send</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<style>
+.msg { max-width: 85%; }
+.msg-user { align-self: flex-end; }
+.msg-assistant { align-self: flex-start; }
+.msg-system { align-self: center; opacity: 0.7; }
+
+.msg-content {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 0.6rem 0.9rem;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.msg-user .msg-content {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+}
+</style>
+{% endblock %}

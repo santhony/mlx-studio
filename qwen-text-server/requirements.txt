@@ -1,2 +1,6 @@
+# qwen-text-server — MLX inference + embeddings
+# Install via setup.sh
+
+mlx-lm>=0.20.0
 fastapi>=0.110.0
 uvicorn>=0.29.0

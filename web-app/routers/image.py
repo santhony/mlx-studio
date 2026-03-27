@@ -68,7 +68,7 @@ async def generate(request: Request):
         resp.raise_for_status()
     except (httpx.HTTPError, httpx.TimeoutException) as exc:
         return HTMLResponse(
-            f'<p class="error">Image server error: {exc}</p>',
+            f'<p class="error">Image server error: {escape(str(exc))}</p>',
             status_code=502,
         )
 

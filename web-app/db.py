@@ -14,6 +14,7 @@ def get_connection(db_path: Path) -> sqlite3.Connection:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(db_path), check_same_thread=False)
     conn.row_factory = sqlite3.Row  # rows accessible by column name
+    conn.execute("PRAGMA foreign_keys = ON")  # enforce foreign key constraints
     return conn
 
 

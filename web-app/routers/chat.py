@@ -10,10 +10,9 @@ Routes:
   GET  /chat/{session_id}                → chat view for a session
   POST /chat/{session_id}/send           → send message, start streaming response
   GET  /chat/{session_id}/stream         → SSE proxy from text server to browser
-  DELETE /chat/sessions/{session_id}     → delete session
+  POST /chat/sessions/{session_id}/delete → delete session
 """
 
-import json
 import sqlite3
 from typing import AsyncGenerator
 
@@ -238,7 +237,7 @@ async def stream_response(session_id: int, request: Request):
     )
 
 
-@router.delete("/sessions/{session_id}")
+@router.post("/sessions/{session_id}/delete")
 async def delete_session(session_id: int, request: Request):
     conn: sqlite3.Connection = request.app.state.db
     conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))

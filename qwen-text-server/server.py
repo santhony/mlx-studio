@@ -18,7 +18,7 @@ import json
 import logging
 import threading
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator, Optional
+from typing import AsyncGenerator
 
 import uvicorn
 from fastapi import FastAPI, HTTPException
@@ -75,10 +75,10 @@ async def _token_stream(prompt: str, max_tokens: int) -> AsyncGenerator[str, Non
     Yields: SSE-formatted lines, e.g. "data: token\\n\\n", "data: [DONE]\\n\\n"
     """
     if _model is None:
-        await asyncio.get_event_loop().run_in_executor(None, _load_model)
+        await asyncio.get_running_loop().run_in_executor(None, _load_model)
 
     q: asyncio.Queue = asyncio.Queue()
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
 
     def _run() -> None:
         try:
@@ -155,15 +155,11 @@ async def chat(req: ChatRequest):
     Stream a chat completion as SSE.
     Messages are formatted via the model's chat template before inference.
     """
-    if _model is None and not _is_loading:
-        # Trigger lazy load without blocking this request check
-        pass
-
     messages = [{"role": m.role, "content": m.content} for m in req.messages]
 
     # Ensure model is loaded (run_in_executor so we don't block the event loop)
     if _model is None:
-        await asyncio.get_event_loop().run_in_executor(None, _load_model)
+        await asyncio.get_running_loop().run_in_executor(None, _load_model)
 
     try:
         prompt = _tokenizer.apply_chat_template(
@@ -194,7 +190,7 @@ async def complete(req: CompleteRequest):
         raise HTTPException(status_code=400, detail="prompt must not be empty")
 
     if _model is None:
-        await asyncio.get_event_loop().run_in_executor(None, _load_model)
+        await asyncio.get_running_loop().run_in_executor(None, _load_model)
 
     return StreamingResponse(
         _token_stream(req.prompt, req.max_tokens),

@@ -21,8 +21,7 @@
             <strong>{{ session.name }}</strong>
             <span style="color: var(--text-muted); font-size: 0.8rem; margin-left: 1rem;">{{ session.updated_at }}</span>
         </a>
-        <form method="post" action="/chat/sessions/{{ session.id }}?_method=DELETE" style="margin: 0;">
-            <input type="hidden" name="_method" value="DELETE">
+        <form method="post" action="/chat/sessions/{{ session.id }}/delete" style="margin: 0;">
             <button type="submit" class="secondary" style="padding: 0.25rem 0.75rem; font-size: 0.8rem;">Delete</button>
         </form>
     </div>

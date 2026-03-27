@@ -1,0 +1,20 @@
+# Qwen-Image-2512 inference server
+# Install via setup.sh, not pip install -r directly
+
+# PyTorch with MPS support (pinned for stability)
+torch==2.6.0
+torchvision==0.21.0
+
+# Hugging Face inference stack
+git+https://github.com/huggingface/diffusers
+transformers>=4.51.0
+tokenizers>=0.21.0
+accelerate>=0.30.0
+
+# Numerical / image
+numpy<2
+Pillow>=10.0.0
+
+# Web server
+fastapi>=0.110.0
+uvicorn>=0.29.0

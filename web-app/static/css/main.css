@@ -153,3 +153,14 @@ button.secondary:hover { border-color: var(--accent); }
     animation: spin 0.7s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Chat-specific layout ─────────────────────────────────────────── */
+
+/* Allow the chat view to use full viewport height */
+body:has(#messages) .main-content {
+    max-width: none;
+    padding: 1rem 1.5rem;
+    height: calc(100vh - 56px); /* subtract nav height */
+    display: flex;
+    flex-direction: column;
+}

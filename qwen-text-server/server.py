@@ -40,6 +40,31 @@ _tokenizer = None
 _load_lock = threading.Lock()
 _is_loading = False
 
+EMBED_MODEL_ID = "mlx-community/all-MiniLM-L6-v2-4bit"
+_embed_model = None
+_embed_processor = None
+_embed_lock = threading.Lock()
+_embed_loading = False
+
+
+def _load_embed_model() -> None:
+    """Load the embedding model. Thread-safe via _embed_lock."""
+    global _embed_model, _embed_processor, _embed_loading
+    with _embed_lock:
+        if _embed_model is not None:
+            return
+        _embed_loading = True
+        log.info("Loading embedding model %s ...", EMBED_MODEL_ID)
+        try:
+            from mlx_embeddings import load as embed_load
+            _embed_model, _embed_processor = embed_load(EMBED_MODEL_ID)
+            log.info("Embedding model loaded")
+        except Exception:
+            log.exception("failed to load embedding model")
+            raise
+        finally:
+            _embed_loading = False
+
 
 def _load_model() -> None:
     """
@@ -145,7 +170,13 @@ async def health():
         status = "loading"
     else:
         status = "offline"
-    return {"status": status, "model": MODEL_ID}
+    embed_status = "ready" if _embed_model is not None else ("loading" if _embed_loading else "offline")
+    return {
+        "status": status,
+        "model": MODEL_ID,
+        "embed_status": embed_status,
+        "embed_model": EMBED_MODEL_ID,
+    }
 
 
 @app.post("/chat")
@@ -204,14 +235,24 @@ async def complete(req: CompleteRequest):
 @app.post("/embed")
 async def embed(req: EmbedRequest):
     """
-    Embed text using nomic-embed-text (Phase 4).
-    Returns 503 until Phase 4 is implemented.
+    Embed text using all-MiniLM-L6-v2 (MLX, 384-dim).
+    Lazy-loads embedding model on first call.
+    Returns { "embedding": [float, ...] }
     """
-    from fastapi.responses import JSONResponse
-    return JSONResponse(
-        status_code=503,
-        content={"status": "not yet implemented — coming in Phase 4"},
-    )
+    if _embed_model is None:
+        await asyncio.get_event_loop().run_in_executor(None, _load_embed_model)
+
+    try:
+        output = await asyncio.get_event_loop().run_in_executor(
+            None,
+            lambda: _embed_processor([req.text]),
+        )
+        # output.text_embeds is shape (1, embedding_dim); take row 0
+        embedding = output.text_embeds[0].tolist()
+        return {"embedding": embedding}
+    except Exception as exc:
+        log.exception("embedding failed")
+        raise HTTPException(status_code=500, detail=f"embedding failed: {exc}") from exc
 
 
 if __name__ == "__main__":

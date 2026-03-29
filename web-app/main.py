@@ -25,6 +25,9 @@ from routers import image as image_router
 from routers import chat as chat_router
 from routers import notebook as notebook_router
 from routers import skills as skills_router
+from routers import agents as agents_router
+from routers import settings as settings_router
+from routers.settings import init_default_allowlist
 from skills import embed_all_skills, SkillsWatcher
 
 logging.basicConfig(
@@ -54,6 +57,9 @@ async def lifespan(app: FastAPI):
     init_schema(conn)
     app.state.db = conn
     app.state.studio_root = STUDIO_ROOT
+
+    # Initialize default filesystem allowlist (if not already set)
+    init_default_allowlist(conn, STUDIO_ROOT)
 
     # Skills: embed existing files, then watch for changes
     skills_dir = STUDIO_ROOT / "data" / "skills"
@@ -85,6 +91,8 @@ app.include_router(image_router.router)
 app.include_router(chat_router.router)
 app.include_router(notebook_router.router)
 app.include_router(skills_router.router)
+app.include_router(agents_router.router)
+app.include_router(settings_router.router)
 
 
 # ── Health / status endpoints ─────────────────────────────────────────────────

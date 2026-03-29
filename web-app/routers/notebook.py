@@ -85,6 +85,12 @@ def _execute_code(code: str, timeout: float = DEFAULT_TIMEOUT) -> dict:
 
     Uses sys.executable so the same Python binary runs the code.
     stdout and stderr are merged into output (stderr appended after stdout).
+
+    Security Model: This tool executes arbitrary user-provided code without
+    additional sandboxing. It is designed for LOCAL-ONLY use by a TRUSTED USER
+    in a development environment. Do not expose this endpoint over the network
+    to untrusted clients or use in production without additional security controls
+    (containerization, seccomp, network isolation, etc.).
     """
     if not code.strip():
         return {"output": "", "success": True, "timed_out": False}
@@ -211,7 +217,7 @@ async def notebook_view(notebook_id: int, request: Request):
     return templates.TemplateResponse(
         request=request,
         name="notebook.html",
-        context={"notebook": notebook, "cells": cells},
+        context={"notebook": notebook, "cells": cells, "notebook_id": notebook_id},
     )
 
 

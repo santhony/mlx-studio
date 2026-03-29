@@ -16,14 +16,15 @@ echo "Creating venv-text with Python 3.11..."
 /Library/Frameworks/Python.framework/Versions/3.11/bin/python3.11 -m venv venv-text
 source venv-text/bin/activate
 
-echo "Installing mlx-lm and server dependencies..."
-pip install "mlx-lm>=0.20.0" "fastapi>=0.110.0" "uvicorn>=0.29.0"
+echo "Installing mlx-lm, mlx-embeddings, and server dependencies..."
+pip install "mlx-lm>=0.20.0" "mlx-embeddings>=0.1.0" "fastapi>=0.110.0" "uvicorn>=0.29.0"
 
 echo ""
 echo "=== Verifying installation ==="
 python3 -c "
 import mlx.core as mx
 import mlx_lm
+import mlx_embeddings
 import fastapi
 print('mlx_lm:', mlx_lm.__version__)
 print('fastapi:', fastapi.__version__)

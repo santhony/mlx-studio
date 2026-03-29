@@ -24,6 +24,7 @@ from db import get_connection, init_schema
 from routers import image as image_router
 from routers import chat as chat_router
 from routers import notebook as notebook_router
+from skills import embed_all_skills, SkillsWatcher
 
 logging.basicConfig(
     level=logging.INFO,
@@ -53,10 +54,24 @@ async def lifespan(app: FastAPI):
     app.state.db = conn
     app.state.studio_root = STUDIO_ROOT
 
+    # Skills: embed existing files, then watch for changes
+    skills_dir = STUDIO_ROOT / "data" / "skills"
+    embed_all_skills(conn, skills_dir)  # Sync existing files at startup
+    watcher = SkillsWatcher(conn, skills_dir)
+    watcher.start()
+    app.state.skills_watcher = watcher
+
+    # Track last injected skills for the skills page
+    app.state.last_injected_skills = []
+
     # httpx client (shared across requests)
     async with httpx.AsyncClient() as client:
         app.state.http_client = client
         yield
+
+    # Shutdown skills watcher
+    if hasattr(app.state, "skills_watcher"):
+        app.state.skills_watcher.stop()
 
     conn.close()
     log.info("Qwen Studio web-app shut down")

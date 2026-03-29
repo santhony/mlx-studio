@@ -28,6 +28,8 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 
+from skills import retrieve_skills, format_skills_for_context
+
 router = APIRouter(prefix="/notebook")
 templates = Jinja2Templates(directory="templates")
 
@@ -131,14 +133,25 @@ async def _stream_code(
     cell_id: int,
     prompt: str,
     conn: sqlite3.Connection,
+    app_state=None,
 ) -> AsyncGenerator[str, None]:
     """
     Request code generation from text server /complete.
     Streams tokens as SSE events and persists the complete code to the cell.
     """
+    skills = retrieve_skills(conn, prompt, top_k=3)
+    skills_ctx = format_skills_for_context(skills)
+    if app_state is not None:
+        app_state.last_injected_skills = [s["name"] for s in skills]
+
+    system_prefix = ""
+    if skills_ctx:
+        system_prefix = skills_ctx + "\n\n"
+
     payload = {
         "prompt": (
-            "Write Python code that does the following. "
+            system_prefix
+            + "Write Python code that does the following. "
             "Return only the code, no explanation, no markdown fences:\n\n"
             + prompt
         ),
@@ -302,7 +315,7 @@ async def stream_code(notebook_id: int, cell_id: int, request: Request):
 
     async def _wrapped() -> AsyncGenerator[str, None]:
         """Stream tokens; on done event, append Prism highlight trigger."""
-        async for chunk in _stream_code(client, cell_id, cell["prompt"], conn):
+        async for chunk in _stream_code(client, cell_id, cell["prompt"], conn, app_state=request.app.state):
             if chunk.startswith("event: done"):
                 # Signal HTMX to stop and trigger re-highlight
                 yield "event: message\ndata: <script>if(typeof Prism!=='undefined'){Prism.highlightElement(document.getElementById('code-content-" + str(cell_id) + "'));}</script>\n\n"

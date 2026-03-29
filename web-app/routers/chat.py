@@ -21,6 +21,8 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 
+from skills import retrieve_skills, format_skills_for_context
+
 router = APIRouter(prefix="/chat")
 templates = Jinja2Templates(directory="templates")
 
@@ -72,6 +74,7 @@ async def _proxy_sse(
     client: httpx.AsyncClient,
     session_id: int,
     conn: sqlite3.Connection,
+    app_state=None,
 ) -> AsyncGenerator[str, None]:
     """
     Fetch the pending assistant message for session_id from the text server,
@@ -79,8 +82,25 @@ async def _proxy_sse(
     """
     # Retrieve all messages for context
     messages = _get_messages(conn, session_id)
+
+    # Build messages list with optional skills system prompt
+    msg_list = [{"role": m["role"], "content": m["content"]} for m in messages]
+    if msg_list:
+        # Use the last user message as the retrieval query
+        last_user = next(
+            (m["content"] for m in reversed(messages) if m["role"] == "user"),
+            None,
+        )
+        if last_user:
+            skills = retrieve_skills(conn, last_user, top_k=3)
+            skills_ctx = format_skills_for_context(skills)
+            if skills_ctx:
+                msg_list = [{"role": "system", "content": skills_ctx}] + msg_list
+            if app_state is not None:
+                app_state.last_injected_skills = [s["name"] for s in skills]
+
     payload = {
-        "messages": [{"role": m["role"], "content": m["content"]} for m in messages],
+        "messages": msg_list,
         "max_tokens": 2048,
     }
 
@@ -214,7 +234,7 @@ async def stream_response(session_id: int, request: Request):
 
     async def _sse_with_event_wrap() -> AsyncGenerator[str, None]:
         """Wrap each token as a named SSE 'message' event for HTMX sse-swap."""
-        async for chunk in _proxy_sse(client, session_id, conn):
+        async for chunk in _proxy_sse(client, session_id, conn, app_state=request.app.state):
             if chunk.startswith("data: "):
                 token = chunk[len("data: "):]
                 if token.strip() == "[DONE]":

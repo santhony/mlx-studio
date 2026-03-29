@@ -1,0 +1,60 @@
+<div class="cell" id="cell-{{ cell.id }}">
+    <div class="cell-header">
+        <span style="color: var(--text-muted); font-size: 0.8rem; font-family: var(--mono);">
+            In [{{ cell.position + 1 }}]
+        </span>
+        <div style="margin-left: auto; display: flex; gap: 0.5rem;">
+            <button
+                hx-post="/notebook/{{ notebook_id }}/cells/{{ cell.id }}/run"
+                hx-target="#cell-output-{{ cell.id }}"
+                hx-swap="outerHTML"
+                class="secondary"
+                style="padding: 0.25rem 0.75rem; font-size: 0.8rem;"
+            >▶ Run</button>
+            <button
+                hx-delete="/notebook/{{ notebook_id }}/cells/{{ cell.id }}"
+                hx-target="#cell-{{ cell.id }}"
+                hx-swap="outerHTML"
+                hx-confirm="Delete this cell?"
+                class="secondary"
+                style="padding: 0.25rem 0.75rem; font-size: 0.8rem; color: var(--red);"
+            >✕</button>
+        </div>
+    </div>
+    <div class="cell-body">
+        <!-- Prompt + Generate -->
+        <form
+            class="cell-prompt"
+            hx-post="/notebook/{{ notebook_id }}/cells/{{ cell.id }}/generate"
+            hx-target="#cell-code-area-{{ cell.id }}"
+            hx-swap="innerHTML"
+        >
+            <div class="form-row" style="margin-bottom: 0;">
+                <div class="form-group">
+                    <textarea
+                        name="prompt"
+                        placeholder="Describe what the code should do..."
+                        rows="2"
+                        style="resize: none;"
+                    >{{ cell.prompt }}</textarea>
+                </div>
+                <button type="submit" style="align-self: flex-end;">Generate</button>
+            </div>
+        </form>
+
+        <!-- Code block area (swapped by generate endpoint) -->
+        <div id="cell-code-area-{{ cell.id }}">
+            {% if cell.code %}
+            <div id="cell-code-{{ cell.id }}" class="cell-code-block">
+                <pre><code id="code-content-{{ cell.id }}" class="language-python">{{ cell.code }}</code></pre>
+            </div>
+            <div id="cell-output-{{ cell.id }}" class="cell-output{% if not cell.output %} cell-output-empty{% endif %}">
+                {% if cell.output %}<pre>{{ cell.output }}</pre>{% else %}(not yet run){% endif %}
+            </div>
+            {% else %}
+            <div id="cell-code-{{ cell.id }}" style="display:none;"></div>
+            <div id="cell-output-{{ cell.id }}" class="cell-output cell-output-empty" style="display:none;"></div>
+            {% endif %}
+        </div>
+    </div>
+</div>

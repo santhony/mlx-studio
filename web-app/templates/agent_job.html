@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}Agent Job #{{ job.id }} — Qwen Studio{% endblock %}
+{% block content %}
+<h1>Agent Job #{{ job.id }}</h1>
+<p style="color: var(--text-muted); margin-bottom: 1.5rem;">{{ job.task }}</p>
+
+<!-- WebSocket connection for live updates -->
+<div hx-ext="ws" ws-connect="/agents/{{ job.id }}/ws" style="display:none;"></div>
+
+<!-- Transcript -->
+<div id="transcript" style="display: flex; flex-direction: column; gap: 0.75rem;">
+    {% for step in steps %}
+    <div class="step step-{{ step.type }}">
+        <span class="step-label">{{ step.type | replace('_', ' ') | title }}</span>
+        <pre class="step-content">{{ step.content }}</pre>
+        {% if step.approved is not none %}
+        <span style="font-size: 0.8rem; color: {% if step.approved %}var(--green){% else %}var(--red){% endif %}">
+            {% if step.approved %}Approved{% else %}Denied{% endif %}
+        </span>
+        {% endif %}
+    </div>
+    {% else %}
+    <p style="color: var(--text-muted); text-align: center; padding: 2rem;">
+        {% if job.status == 'running' %}Agent is thinking...{% else %}No steps recorded.{% endif %}
+    </p>
+    {% endfor %}
+</div>
+
+<style>
+.step {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 0.75rem 1rem;
+}
+.step-reasoning { border-left: 3px solid var(--accent); }
+.step-tool { border-left: 3px solid var(--yellow); }
+.step-result { border-left: 3px solid var(--green); }
+.step-approval { border-left: 3px solid var(--red); background: rgba(224, 82, 82, 0.05); }
+.step-denial { border-left: 3px solid var(--red); }
+.step-error { border-left: 3px solid var(--red); }
+.step-complete { border-left: 3px solid var(--green); }
+
+.step-label {
+    display: block;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-muted);
+    margin-bottom: 0.4rem;
+}
+.step-content {
+    font-family: var(--mono);
+    font-size: 0.85rem;
+    white-space: pre-wrap;
+    word-break: break-word;
+    margin: 0;
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.approval-buttons { margin-top: 0.75rem; display: flex; gap: 0.5rem; }
+.btn-allow { background: var(--green); }
+.btn-deny { color: var(--red); border-color: var(--red); }
+</style>
+{% endblock %}

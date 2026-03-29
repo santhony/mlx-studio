@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Settings — Qwen Studio{% endblock %}
+{% block content %}
+<h1>Settings</h1>
+
+<h2>Filesystem Allowlist</h2>
+<p style="color: var(--text-muted); margin-bottom: 1rem; font-size: 0.9rem;">
+    Agent filesystem tools can only access directories in this list.
+    Paths are checked at the code level — the model cannot bypass this.
+</p>
+
+<div class="card" style="margin-bottom: 1rem;">
+    <form method="post" action="/settings/allowlist/add" style="display: flex; gap: 0.75rem; align-items: flex-end;">
+        <div class="form-group" style="flex: 1">
+            <label for="directory">Add directory</label>
+            <input type="text" id="directory" name="directory" placeholder="/path/to/allow">
+        </div>
+        <button type="submit">Add</button>
+    </form>
+</div>
+
+{% if allowed_dirs %}
+<div>
+    {% for dir in allowed_dirs %}
+    <div class="card" style="display: flex; align-items: center; justify-content: space-between; padding: 0.75rem 1rem; margin-bottom: 0.5rem;">
+        <code style="font-size: 0.85rem;">{{ dir }}</code>
+        <form method="post" action="/settings/allowlist/remove" style="margin: 0;">
+            <input type="hidden" name="directory" value="{{ dir }}">
+            <button type="submit" class="secondary" style="padding: 0.2rem 0.6rem; font-size: 0.8rem; color: var(--red);">Remove</button>
+        </form>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<p style="color: var(--text-muted)">No directories allowed. Agent filesystem tools will be blocked entirely.</p>
+{% endif %}
+{% endblock %}

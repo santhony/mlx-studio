@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}Fine-Tune Job #{{ job.id }} — Qwen Studio{% endblock %}
+{% block content %}
+<!-- WebSocket for live metrics -->
+<div hx-ext="ws" ws-connect="/finetune/{{ job.id }}/ws" style="display:none;"></div>
+
+<div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1.5rem;">
+    <div>
+        <h1>Fine-Tune Job #{{ job.id }}</h1>
+        <p style="color: var(--text-muted);">{{ config.get('base_model', job.base_model).split('/')[-1] }}</p>
+    </div>
+    <div style="display: flex; gap: 0.75rem; align-items: center;">
+        <span id="job-status">
+            <span class="status-badge status-{{ job.status }}">{{ job.status }}</span>
+        </span>
+        {% if job.status == 'running' %}
+        <form method="post" action="/finetune/{{ job.id }}/stop">
+            <button type="submit" class="secondary" style="color: var(--red);">Stop</button>
+        </form>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Configuration summary -->
+<div class="card" style="margin-bottom: 1rem;">
+    <h2>Configuration</h2>
+    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 1rem; margin-top: 0.75rem;">
+        <div><span style="color: var(--text-muted); font-size: 0.75rem;">ITERATIONS</span><br><strong>{{ config.get('iters', '—') }}</strong></div>
+        <div><span style="color: var(--text-muted); font-size: 0.75rem;">LEARNING RATE</span><br><strong>{{ config.get('learning_rate', '—') }}</strong></div>
+        <div><span style="color: var(--text-muted); font-size: 0.75rem;">LORA RANK</span><br><strong>{{ config.get('lora_r', '—') }}</strong></div>
+        <div><span style="color: var(--text-muted); font-size: 0.75rem;">LORA ALPHA</span><br><strong>{{ config.get('lora_alpha', '—') }}</strong></div>
+        <div><span style="color: var(--text-muted); font-size: 0.75rem;">BATCH SIZE</span><br><strong>{{ config.get('batch_size', '—') }}</strong></div>
+        <div><span style="color: var(--text-muted); font-size: 0.75rem;">LAYERS</span><br><strong>{{ config.get('num_layers', '—') }}</strong></div>
+    </div>
+</div>
+
+<!-- Live metrics -->
+<div class="card" style="margin-bottom: 1rem;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+        <h2>Metrics</h2>
+        <div style="font-size: 0.85rem; color: var(--text-muted);">
+            Latest loss: <strong id="latest-loss">
+                {% if metrics %}{{ "%.4f"|format(metrics[-1].loss) }}{% else %}—{% endif %}
+            </strong>
+        </div>
+    </div>
+    <div style="overflow-x: auto;">
+        <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem;">
+            <thead>
+                <tr style="color: var(--text-muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 1px solid var(--border);">
+                    <th style="padding: 0.4rem 0.6rem; text-align: left;">Iter</th>
+                    <th style="padding: 0.4rem 0.6rem; text-align: left;">Loss</th>
+                    <th style="padding: 0.4rem 0.6rem; text-align: left;">Tok/s</th>
+                    <th style="padding: 0.4rem 0.6rem; text-align: left;">Peak Mem</th>
+                    <th style="padding: 0.4rem 0.6rem; text-align: left;">Free Mem</th>
+                </tr>
+            </thead>
+            <tbody id="metrics-table">
+                {% for m in metrics %}
+                <tr>
+                    <td style="padding: 0.3rem 0.6rem;">{{ m.iteration }}</td>
+                    <td style="padding: 0.3rem 0.6rem;" class="loss-cell">{{ "%.4f"|format(m.loss) if m.loss else "—" }}</td>
+                    <td style="padding: 0.3rem 0.6rem;">{{ "%.1f"|format(m.tokens_sec) if m.tokens_sec else "—" }}</td>
+                    <td style="padding: 0.3rem 0.6rem;">{{ "%.2f"|format(m.peak_mem) ~ " GB" if m.peak_mem else "—" }}</td>
+                    <td style="padding: 0.3rem 0.6rem;">{{ "%.1f"|format(m.mem_available_gb) ~ " GB" if m.mem_available_gb else "—" }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="5" style="padding: 1rem; color: var(--text-muted); text-align: center;">
+                    {% if job.status == 'running' %}Waiting for first training step...{% else %}No metrics recorded.{% endif %}
+                </td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Export -->
+{% if adapter_exists or job.status == 'completed' %}
+<div class="card">
+    <h2>Export Adapter</h2>
+    <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 0.75rem;">
+        Export the final LoRA adapter (<code>adapters.safetensors</code>) to a named file in <code>data/checkpoints/</code>.
+    </p>
+    <form method="post" action="/finetune/{{ job.id }}/export" style="display: flex; gap: 0.75rem; align-items: flex-end;">
+        <div class="form-group" style="flex: 1">
+            <label for="export_name">Export name</label>
+            <input type="text" id="export_name" name="name" value="job_{{ job.id }}_adapter" placeholder="adapter_name">
+        </div>
+        <button type="submit">Export</button>
+    </form>
+</div>
+{% endif %}
+
+<style>
+.loss-cell { font-family: var(--mono); }
+</style>
+{% endblock %}

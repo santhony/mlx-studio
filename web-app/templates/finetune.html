@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+{% block title %}Fine-Tuning — Qwen Studio{% endblock %}
+{% block content %}
+<h1>Fine-Tuning</h1>
+
+<div class="card" style="margin-bottom: 1.5rem;">
+    <h2>New Fine-Tuning Job</h2>
+
+    <!-- Step 1: Upload dataset -->
+    <div style="margin-bottom: 1.5rem;">
+        <h3 style="font-size: 1rem; margin-bottom: 0.5rem;">Step 1: Upload Dataset</h3>
+        <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 0.75rem;">
+            JSONL file with one record per line.
+            Format: <code>{"text": "..."}</code> or <code>{"prompt": "...", "completion": "..."}</code>
+            — <a href="https://github.com/ml-explore/mlx-lm" target="_blank" style="color: var(--accent);">MLX LM docs</a>
+        </p>
+        <form
+            hx-post="/finetune/upload"
+            hx-target="#upload-result"
+            hx-encoding="multipart/form-data"
+            style="display: flex; gap: 0.75rem; align-items: flex-end;"
+        >
+            <div class="form-group" style="flex: 1">
+                <label for="file">Dataset (.jsonl)</label>
+                <input type="file" id="file" name="file" accept=".jsonl" required>
+            </div>
+            <button type="submit">Upload</button>
+        </form>
+        <div id="upload-result" style="margin-top: 0.5rem; font-size: 0.85rem; color: var(--green);"></div>
+    </div>
+
+    <!-- Step 2: Configure and start job -->
+    <form method="post" action="/finetune/">
+        <h3 style="font-size: 1rem; margin-bottom: 0.75rem;">Step 2: Configure Training</h3>
+
+        <div class="form-row">
+            <div class="form-group">
+                <label for="base_model">Base Model</label>
+                <select id="base_model" name="base_model">
+                    <option value="mlx-community/Qwen2.5-7B-Instruct-4bit">Qwen2.5-7B-Instruct (4-bit, ~7 GB)</option>
+                    <option value="mlx-community/Qwen2.5-Coder-7B-Instruct-4bit">Qwen2.5-Coder-7B (4-bit, ~7 GB)</option>
+                    <option value="mlx-community/Qwen2.5-Coder-32B-Instruct">Qwen2.5-Coder-32B (BF16, ~65 GB)</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="dataset_path">Dataset Path (from upload above)</label>
+                <input type="text" id="dataset_path" name="dataset_path" placeholder="/path/to/data/dir" required>
+            </div>
+        </div>
+
+        <div class="form-row">
+            <div class="form-group">
+                <label for="iters">
+                    Iterations
+                    <span class="help-text">Number of gradient steps.
+                        <a href="https://huggingface.co/docs/transformers/training" target="_blank">Guide</a>
+                    </span>
+                </label>
+                <input type="number" id="iters" name="iters" value="600" min="10" max="10000">
+            </div>
+            <div class="form-group">
+                <label for="learning_rate">
+                    Learning Rate
+                    <span class="help-text">Step size. Typical: 1e-4 to 2e-4.
+                        <a href="https://huggingface.co/docs/transformers/training" target="_blank">Guide</a>
+                    </span>
+                </label>
+                <input type="text" id="learning_rate" name="learning_rate" value="2e-4">
+            </div>
+        </div>
+
+        <div class="form-row">
+            <div class="form-group">
+                <label for="lora_r">
+                    LoRA Rank (r)
+                    <span class="help-text">Adapter matrix size. Higher = more capacity, more VRAM.
+                        <a href="https://arxiv.org/abs/2106.09685" target="_blank">LoRA paper</a>
+                    </span>
+                </label>
+                <input type="number" id="lora_r" name="lora_r" value="16" min="1" max="256">
+            </div>
+            <div class="form-group">
+                <label for="lora_alpha">
+                    LoRA Alpha
+                    <span class="help-text">Scaling factor. Usually set equal to rank.
+                        <a href="https://huggingface.co/docs/peft/conceptual_guides/lora" target="_blank">Explanation</a>
+                    </span>
+                </label>
+                <input type="number" id="lora_alpha" name="lora_alpha" value="32" min="1" max="512">
+            </div>
+        </div>
+
+        <div class="form-row">
+            <div class="form-group">
+                <label for="batch_size">
+                    Batch Size
+                    <span class="help-text">Records processed per step. Reduce if OOM.</span>
+                </label>
+                <input type="number" id="batch_size" name="batch_size" value="4" min="1" max="32">
+            </div>
+            <div class="form-group">
+                <label for="num_layers">
+                    Layers to Fine-Tune
+                    <span class="help-text">Number of attention layers to apply LoRA to. Fewer = less memory.</span>
+                </label>
+                <input type="number" id="num_layers" name="num_layers" value="16" min="1" max="80">
+            </div>
+        </div>
+
+        <div class="card" style="background: rgba(124, 106, 240, 0.05); border-color: var(--accent); margin-bottom: 1rem; padding: 0.75rem 1rem;">
+            <p style="font-size: 0.85rem; margin-bottom: 0;">
+                <strong>LoRA vs QLoRA:</strong>
+                QLoRA activates automatically when using a 4-bit quantized model (e.g., <code>*-4bit</code> variants).
+                It uses ~40% less memory than LoRA FP16 with near-identical quality.
+                <a href="https://arxiv.org/abs/2305.14314" target="_blank" style="color: var(--accent);">QLoRA paper</a>
+            </p>
+        </div>
+
+        <button type="submit">Start Training</button>
+    </form>
+</div>
+
+{% if jobs %}
+<h2>Job History</h2>
+{% for job in jobs %}
+<div class="card" style="display: flex; align-items: center; justify-content: space-between; padding: 1rem 1.5rem; margin-bottom: 0.5rem;">
+    <a href="/finetune/{{ job.id }}" style="color: var(--text); text-decoration: none; flex: 1;">
+        <span class="status-badge status-{{ job.status }}">{{ job.status }}</span>
+        <span style="margin-left: 0.75rem; font-size: 0.9rem;">{{ job.base_model.split('/')[-1] }}</span>
+    </a>
+    <span style="color: var(--text-muted); font-size: 0.8rem;">{{ job.created_at }}</span>
+</div>
+{% endfor %}
+{% else %}
+<p style="color: var(--text-muted)">No fine-tuning jobs yet.</p>
+{% endif %}
+
+<style>
+.status-badge {
+    font-size: 0.75rem; padding: 0.15rem 0.5rem; border-radius: 99px; font-weight: 600;
+}
+.status-running   { background: rgba(224, 180, 82, 0.2); color: var(--yellow); }
+.status-completed { background: rgba(76, 175, 125, 0.2); color: var(--green); }
+.status-failed    { background: rgba(224, 82, 82, 0.2); color: var(--red); }
+.status-stopped   { background: rgba(136, 136, 136, 0.2); color: var(--text-muted); }
+.status-pending   { background: rgba(124, 106, 240, 0.2); color: var(--accent); }
+
+.help-text {
+    display: block;
+    font-size: 0.75rem;
+    font-weight: 400;
+    color: var(--text-muted);
+    text-transform: none;
+    letter-spacing: 0;
+}
+.help-text a { color: var(--accent); }
+</style>
+{% endblock %}

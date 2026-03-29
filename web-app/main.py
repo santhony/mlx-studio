@@ -24,6 +24,7 @@ from db import get_connection, init_schema
 from routers import image as image_router
 from routers import chat as chat_router
 from routers import notebook as notebook_router
+from routers import skills as skills_router
 from skills import embed_all_skills, SkillsWatcher
 
 logging.basicConfig(
@@ -83,6 +84,7 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 app.include_router(image_router.router)
 app.include_router(chat_router.router)
 app.include_router(notebook_router.router)
+app.include_router(skills_router.router)
 
 
 # ── Health / status endpoints ─────────────────────────────────────────────────

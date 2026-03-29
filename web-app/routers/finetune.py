@@ -20,7 +20,6 @@ import shutil
 import sqlite3
 import subprocess
 import threading
-import time
 from pathlib import Path
 from typing import Optional
 
@@ -275,7 +274,8 @@ async def upload_dataset(request: Request, file: UploadFile = File(...)):
     datasets_dir = studio_root / "data" / "datasets"
     datasets_dir.mkdir(parents=True, exist_ok=True)
 
-    dest = datasets_dir / file.filename
+    safe_name = Path(file.filename).name
+    dest = datasets_dir / safe_name
     dest.write_bytes(content)
 
     # Create train.jsonl structure expected by mlx_lm.lora
@@ -316,7 +316,7 @@ async def create_job(request: Request):
     job_id = cur.lastrowid
 
     studio_root: Path = request.app.state.studio_root
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     _start_training(job_id, config, studio_root, conn, loop)
 
     return RedirectResponse(url=f"/finetune/{job_id}", status_code=303)
@@ -371,7 +371,8 @@ async def export_adapter(job_id: int, request: Request):
 
     # Copy to named export in checkpoints/
     form = await request.form()
-    export_name = (form.get("name") or f"job_{job_id}_adapter").strip().replace(" ", "_")
+    export_name = Path(form.get("name") or f"job_{job_id}_adapter").name
+    export_name = export_name.strip().replace(" ", "_")
     export_path = studio_root / "data" / "checkpoints" / f"{export_name}.safetensors"
     shutil.copy(adapter_src, export_path)
 

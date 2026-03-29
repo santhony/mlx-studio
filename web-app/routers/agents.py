@@ -191,82 +191,92 @@ async def _run_agent(
         "session_tools": set(),
     }
 
-    for step in range(MAX_STEPS):
-        # Call text server for reasoning
-        try:
-            async with http_client.stream(
-                "POST",
-                f"{TEXT_SERVER}/chat",
-                json={"messages": messages, "max_tokens": 1024},
-                timeout=300.0,
-            ) as resp:
-                resp.raise_for_status()
-                tokens: list[str] = []
-                async for line in resp.aiter_lines():
-                    if line.startswith("data: "):
-                        t = line[len("data: "):]
-                        if t == "[DONE]":
-                            break
-                        tokens.append(t.replace("\\n", "\n"))
-                reasoning = "".join(tokens)
-        except Exception as exc:
-            error_msg = f"text server error: {exc}"
-            _append_step(conn, job_id, "error", error_msg)
-            await _ws_send(job_id, _step_html("error", error_msg))
-            break
-
-        if not reasoning.strip():
-            break
-
-        messages.append({"role": "assistant", "content": reasoning})
-        _append_step(conn, job_id, "reasoning", reasoning)
-        await _ws_send(job_id, _step_html("reasoning", reasoning))
-
-        # Parse for tool call
-        tool_call = _parse_tool_call(reasoning)
-        if tool_call is None:
-            # No tool call → task complete
-            _append_step(conn, job_id, "complete", "Task completed")
-            await _ws_send(job_id, _step_html("complete", "Task completed"))
-            break
-
-        tool_name = tool_call["tool"]
-        tool_args = tool_call["args"]
-        args_json = json.dumps(tool_args, indent=2)
-
-        # Check session-level approval
-        if tool_name not in _job_state[job_id]["session_tools"]:
-            # Request approval
-            event = asyncio.Event()
-            _job_state[job_id]["event"] = event
-            _job_state[job_id]["approved"] = False
-
-            _append_step(conn, job_id, "approval_request", f"{tool_name}\n{args_json}")
-            await _ws_send(job_id, _approval_card_html(job_id, tool_name, args_json))
-
-            # Wait for user decision (timeout after 5 min)
+    exit_status = "completed"
+    try:
+        for step in range(MAX_STEPS):
+            # Call text server for reasoning
             try:
-                await asyncio.wait_for(event.wait(), timeout=300.0)
-            except asyncio.TimeoutError:
-                _append_step(conn, job_id, "denial", "Approval timed out — tool not executed")
-                await _ws_send(job_id, _step_html("denial", "Approval timed out"))
+                async with http_client.stream(
+                    "POST",
+                    f"{TEXT_SERVER}/chat",
+                    json={"messages": messages, "max_tokens": 1024},
+                    timeout=300.0,
+                ) as resp:
+                    resp.raise_for_status()
+                    tokens: list[str] = []
+                    async for line in resp.aiter_lines():
+                        if line.startswith("data: "):
+                            t = line[len("data: "):]
+                            if t == "[DONE]":
+                                break
+                            tokens.append(t.replace("\\n", "\n"))
+                    reasoning = "".join(tokens)
+            except Exception as exc:
+                error_msg = f"text server error: {exc}"
+                _append_step(conn, job_id, "error", error_msg)
+                await _ws_send(job_id, _step_html("error", error_msg))
+                exit_status = "failed"
                 break
 
-            if not _job_state[job_id]["approved"]:
-                denial_msg = f"Tool '{tool_name}' was denied by user"
-                messages.append({"role": "user", "content": f"Tool call denied: {tool_name}"})
-                _append_step(conn, job_id, "denial", denial_msg)
-                await _ws_send(job_id, _step_html("denial", denial_msg))
-                continue
+            if not reasoning.strip():
+                break
 
-        # Execute tool
-        result = await _dispatch_tool(tool_name, tool_args, allowed_dirs, conn, http_client)
-        tool_result = f"Tool '{tool_name}' result:\n{result}"
-        messages.append({"role": "user", "content": tool_result})
-        _append_step(conn, job_id, "tool_result", tool_result)
-        await _ws_send(job_id, _step_html("tool_result", tool_result))
+            messages.append({"role": "assistant", "content": reasoning})
+            _append_step(conn, job_id, "reasoning", reasoning)
+            await _ws_send(job_id, _step_html("reasoning", reasoning))
 
-    _update_job_status(conn, job_id, "completed")
+            # Parse for tool call
+            tool_call = _parse_tool_call(reasoning)
+            if tool_call is None:
+                # No tool call → task complete
+                _append_step(conn, job_id, "complete", "Task completed")
+                await _ws_send(job_id, _step_html("complete", "Task completed"))
+                break
+
+            tool_name = tool_call["tool"]
+            tool_args = tool_call["args"]
+            args_json = json.dumps(tool_args, indent=2)
+
+            # Check session-level approval
+            if tool_name not in _job_state[job_id]["session_tools"]:
+                # Request approval
+                event = asyncio.Event()
+                _job_state[job_id]["event"] = event
+                _job_state[job_id]["approved"] = False
+                _job_state[job_id]["current_tool"] = tool_name
+
+                _append_step(conn, job_id, "approval_request", f"{tool_name}\n{args_json}")
+                await _ws_send(job_id, _approval_card_html(job_id, tool_name, args_json))
+
+                # Wait for user decision (timeout after 5 min)
+                try:
+                    await asyncio.wait_for(event.wait(), timeout=300.0)
+                except asyncio.TimeoutError:
+                    _append_step(conn, job_id, "denial", "Approval timed out — tool not executed")
+                    await _ws_send(job_id, _step_html("denial", "Approval timed out"))
+                    exit_status = "timed_out"
+                    break
+
+                if not _job_state[job_id]["approved"]:
+                    denial_msg = f"Tool '{tool_name}' was denied by user"
+                    messages.append({"role": "user", "content": f"Tool call denied: {tool_name}"})
+                    _append_step(conn, job_id, "denial", denial_msg)
+                    await _ws_send(job_id, _step_html("denial", denial_msg))
+                    continue
+
+            # Execute tool
+            result = await _dispatch_tool(tool_name, tool_args, allowed_dirs, conn, http_client)
+            tool_result = f"Tool '{tool_name}' result:\n{result}"
+            messages.append({"role": "user", "content": tool_result})
+            _append_step(conn, job_id, "tool_result", tool_result)
+            await _ws_send(job_id, _step_html("tool_result", tool_result))
+    except Exception as exc:
+        error_msg = f"unhandled error in agent loop: {exc}"
+        _append_step(conn, job_id, "error", error_msg)
+        await _ws_send(job_id, _step_html("error", error_msg))
+        exit_status = "failed"
+
+    _update_job_status(conn, job_id, exit_status)
     _job_state.pop(job_id, None)
 
 

@@ -136,7 +136,7 @@ async def shell(command: str, timeout: float = DEFAULT_SHELL_TIMEOUT) -> str:
         except Exception as exc:
             return f"ERROR: {exc}"
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, _run)
 
 
@@ -162,7 +162,7 @@ async def python_exec(code: str, timeout: float = DEFAULT_PYTHON_TIMEOUT) -> str
         except Exception as exc:
             return f"ERROR: {exc}"
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, _run)
 
 

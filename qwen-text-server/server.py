@@ -14,7 +14,6 @@ Endpoints:
 """
 
 import asyncio
-import json
 import logging
 import threading
 from contextlib import asynccontextmanager

@@ -21,10 +21,11 @@ pip install -r requirements.txt
 echo ""
 echo "=== Verifying installation ==="
 python3 -c "
-import fastapi, uvicorn, jinja2, httpx
+import fastapi, uvicorn, jinja2, httpx, watchdog, frontmatter
 print('fastapi:', fastapi.__version__)
 print('httpx:', httpx.__version__)
 print('jinja2:', jinja2.__version__)
+print('watchdog:', watchdog.__version__)
 "
 
 echo ""

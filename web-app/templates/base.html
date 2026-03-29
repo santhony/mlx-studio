@@ -9,6 +9,18 @@
     <script src="https://unpkg.com/htmx.org@1.9.12" defer></script>
     <!-- HTMX SSE extension (for streaming chat) -->
     <script src="https://unpkg.com/htmx.org@1.9.12/dist/ext/sse.js" defer></script>
+    <!-- Prism.js syntax highlighting -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.30.0/themes/prism-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.30.0/prism.min.js" data-manual defer></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.30.0/components/prism-python.min.js" defer></script>
+    <script>
+        // Re-highlight code blocks whenever HTMX swaps in new content
+        document.addEventListener("htmx:afterSwap", function(evt) {
+            if (typeof Prism !== "undefined") {
+                Prism.highlightAllUnder(evt.detail.target);
+            }
+        });
+    </script>
 </head>
 <body>
     <nav class="nav">

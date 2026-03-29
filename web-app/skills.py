@@ -18,7 +18,6 @@ Each skill file may have optional YAML frontmatter:
 
 import logging
 import sqlite3
-import struct
 import threading
 from pathlib import Path
 from typing import Optional

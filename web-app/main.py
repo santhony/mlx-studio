@@ -27,6 +27,7 @@ from routers import notebook as notebook_router
 from routers import skills as skills_router
 from routers import agents as agents_router
 from routers import settings as settings_router
+from routers import finetune as finetune_router
 from routers.settings import init_default_allowlist
 from skills import embed_all_skills, SkillsWatcher
 
@@ -93,6 +94,7 @@ app.include_router(notebook_router.router)
 app.include_router(skills_router.router)
 app.include_router(agents_router.router)
 app.include_router(settings_router.router)
+app.include_router(finetune_router.router)
 
 
 # ── Health / status endpoints ─────────────────────────────────────────────────

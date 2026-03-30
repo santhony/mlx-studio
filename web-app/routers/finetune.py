@@ -125,6 +125,7 @@ def _metric_row_html(metric: dict) -> str:
     tokens_sec = f"{metric['tokens_sec']:.1f}" if metric.get("tokens_sec") else "—"
     peak_mem = f"{metric['peak_mem']:.2f} GB" if metric.get("peak_mem") else "—"
     mem_avail = metric.get("mem_available_gb", "?")
+    mem_avail_str = f"{mem_avail:.1f} GB" if isinstance(mem_avail, (int, float)) else "—"
 
     return f"""<div id="metrics-table" hx-swap-oob="beforeend">
 <tr>
@@ -132,7 +133,7 @@ def _metric_row_html(metric: dict) -> str:
     <td class="loss-cell">{loss}</td>
     <td>{tokens_sec}</td>
     <td>{peak_mem}</td>
-    <td>{mem_avail:.1f} GB</td>
+    <td>{mem_avail_str}</td>
 </tr>
 </div>
 <div id="latest-loss" hx-swap-oob="innerHTML">{loss}</div>"""

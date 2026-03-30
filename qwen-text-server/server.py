@@ -240,10 +240,10 @@ async def embed(req: EmbedRequest):
     Returns { "embedding": [float, ...] }
     """
     if _embed_model is None:
-        await asyncio.get_event_loop().run_in_executor(None, _load_embed_model)
+        await asyncio.get_running_loop().run_in_executor(None, _load_embed_model)
 
     try:
-        output = await asyncio.get_event_loop().run_in_executor(
+        output = await asyncio.get_running_loop().run_in_executor(
             None,
             lambda: _embed_processor([req.text]),
         )

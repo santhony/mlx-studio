@@ -33,6 +33,7 @@ PORT = 8765
 
 _pipe = None
 _device = None
+_is_loading = False
 
 
 def _patch_sdpa_for_mps() -> None:
@@ -106,24 +107,28 @@ def _patch_sdpa_for_mps() -> None:
 
 def _load_pipeline():
     """Load Qwen-Image-2512 via diffusers. Called lazily on first /generate request."""
-    global _pipe, _device
+    global _pipe, _device, _is_loading
     import torch
     from diffusers import DiffusionPipeline
 
-    _device = "mps" if torch.backends.mps.is_available() else "cpu"
-    log.info("Loading %s on %s ...", MODEL_ID, _device)
+    _is_loading = True
+    try:
+        _device = "mps" if torch.backends.mps.is_available() else "cpu"
+        log.info("Loading %s on %s ...", MODEL_ID, _device)
 
-    if _device == "mps":
-        _patch_sdpa_for_mps()
+        if _device == "mps":
+            _patch_sdpa_for_mps()
 
-    _pipe = DiffusionPipeline.from_pretrained(
-        MODEL_ID,
-        torch_dtype=torch.bfloat16,
-        trust_remote_code=True,
-    )
-    _pipe = _pipe.to(_device)
-    _pipe.enable_attention_slicing()
-    log.info("Model loaded on %s", _device)
+        _pipe = DiffusionPipeline.from_pretrained(
+            MODEL_ID,
+            torch_dtype=torch.bfloat16,
+            trust_remote_code=True,
+        )
+        _pipe = _pipe.to(_device)
+        _pipe.enable_attention_slicing()
+        log.info("Model loaded on %s", _device)
+    finally:
+        _is_loading = False
 
 
 # ── Pydantic models ────────────────────────────────────────────────────────────
@@ -148,7 +153,12 @@ app = FastAPI(title="qwen-image-server", lifespan=lifespan)
 
 @app.get("/health")
 async def health():
-    status = "ready" if _pipe is not None else "loading"
+    if _pipe is not None:
+        status = "ready"
+    elif _is_loading:
+        status = "loading"
+    else:
+        status = "offline"
     return {"status": status, "model": MODEL_ID}
 
 

@@ -31,7 +31,7 @@ import agent_tools
 
 DEFAULT_FETCH_TIMEOUT = 20
 DEFAULT_FETCH_MAX_CHARS = 50_000
-DEFAULT_PYTHON_TIMEOUT = 30
+DEFAULT_PYTHON_TIMEOUT = 60
 DEFAULT_SEARCH_RESULTS = 10
 
 # OpenAI-format tool schemas. Names and parameter names match what the model

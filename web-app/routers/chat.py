@@ -31,15 +31,17 @@ templates = Jinja2Templates(directory="templates")
 
 TEXT_SERVER = "http://127.0.0.1:8766"
 
-# Maximum tool-call rounds per user turn. Prevents runaway loops if the model
-# never decides to stop calling tools.
-MAX_TOOL_ROUNDS = 6
+# Maximum tool-call rounds per user turn. Prevents runaway loops if the
+# model never decides to stop calling tools. Tuned upward because exploration
+# tasks (find a file, then read it, then read its imports, …) genuinely need
+# more rounds than a single fetch_url-then-answer pattern.
+MAX_TOOL_ROUNDS = 15
 
-# How many of the most-recent history messages (user + assistant) to send to
-# the model on each turn. System messages and the in-progress tool-loop
-# extension are always included. Keeps long sessions responsive — a single
-# 38k-token prefill takes ~2.5 min cold on M-series Metal.
+# Caps applied to history before sending to the model. The smaller of the
+# two limits wins. A single 38k-token prefill takes ~2.5 min cold on M-series
+# Metal — these caps keep that under control for long sessions.
 MAX_HISTORY_MESSAGES = 30
+MAX_HISTORY_CHARS = 60_000  # ~roughly 15k tokens
 
 
 # ── Session helpers ────────────────────────────────────────────────────────────
@@ -97,11 +99,23 @@ async def _proxy_sse(
     `<tool>` / `<tool_result>` sentinels.
     """
     # Retrieve history + assemble messages list, with optional skills prompt.
-    # Cap to the most-recent MAX_HISTORY_MESSAGES messages so long sessions
+    # Cap both by message count and by total characters so long sessions
     # don't pay a multi-minute prefill cost on every turn.
     history = _get_messages(conn, session_id)
     if len(history) > MAX_HISTORY_MESSAGES:
         history = history[-MAX_HISTORY_MESSAGES:]
+    # Walk backwards, accumulating chars; drop oldest messages until the
+    # running budget fits. Always keep at least the most recent two (the
+    # current user turn and, if present, the assistant turn before it).
+    if history:
+        budget = MAX_HISTORY_CHARS
+        kept_rev: list[dict] = []
+        for m in reversed(history):
+            mlen = len(m["content"] or "")
+            if kept_rev and mlen + sum(len(x["content"] or "") for x in kept_rev) > budget:
+                break
+            kept_rev.append(m)
+        history = list(reversed(kept_rev)) or history[-2:]
     msg_list = [
         {
             "role": m["role"],
@@ -145,7 +159,9 @@ async def _proxy_sse(
     for round_idx in range(MAX_TOOL_ROUNDS + 1):
         payload = {
             "messages": msg_list,
-            "max_tokens": 2048,
+            # Thinking + tool args can easily exceed 2048; DS4 truncates with
+            # "unterminated tool call" if a call mid-DSML hits the cap.
+            "max_tokens": 8192,
             "tools": TOOL_SCHEMAS,
         }
         # Tool calls collected during this round, to be executed after the stream ends.

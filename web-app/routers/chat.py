@@ -126,8 +126,9 @@ async def _proxy_sse(
                 # Unescape newlines (escaped in text server for SSE safety)
                 decoded = token.replace("\\n", "\n")
                 full_response.append(decoded)
-                # Re-escape for SSE wire format
-                yield f"data: {token}\n\n"
+                # Re-escape for SSE wire format before sending to browser
+                reescaped = decoded.replace("\n", "\\n")
+                yield f"data: {reescaped}\n\n"
     except httpx.HTTPStatusError as exc:
         yield f"data: ERROR: text server returned {exc.response.status_code}\n\n"
         return
@@ -202,23 +203,32 @@ async def send_message(session_id: int, request: Request):
     if not content:
         return HTMLResponse('<p class="error">Message cannot be empty.</p>', status_code=400)
 
-    _append_message(conn, session_id, "user", content)
+    msg_id = _append_message(conn, session_id, "user", content)
 
     # Return HTMX fragment: user bubble + streaming assistant bubble
+    # Use msg_id (unique per message) so concurrent responses don't collide
     escaped_content = content.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
     return HTMLResponse(f"""
 <div class="msg msg-user">
     <div class="msg-content">{escaped_content}</div>
 </div>
-<div class="msg msg-assistant"
-     hx-ext="sse"
-     sse-connect="/chat/{session_id}/stream"
-     sse-swap="message"
-     hx-swap="beforeend">
-    <div class="msg-content" id="streaming-{session_id}">
-        <span class="spinner"></span>
-    </div>
+<div class="msg msg-assistant">
+    <div class="msg-content" id="streaming-{msg_id}"><span class="spinner"></span></div>
 </div>
+<script>
+(function() {{
+    const el = document.getElementById("streaming-{msg_id}");
+    const es = new EventSource("/chat/{session_id}/stream");
+    let text = "";
+    es.onmessage = function(e) {{
+        if (e.data === "[DONE]") {{ es.close(); return; }}
+        text += e.data.replace(/\\\\n/g, "\\n");
+        el.innerHTML = window.renderChatContent(text);
+        el.scrollIntoView({{block: "end"}});
+    }};
+    es.onerror = function() {{ es.close(); }};
+}})();
+</script>
 """)
 
 
@@ -233,19 +243,14 @@ async def stream_response(session_id: int, request: Request):
     client: httpx.AsyncClient = request.app.state.http_client
 
     async def _sse_with_event_wrap() -> AsyncGenerator[str, None]:
-        """Wrap each token as a named SSE 'message' event for HTMX sse-swap."""
+        """Stream tokens as plain SSE messages for the browser EventSource."""
         async for chunk in _proxy_sse(client, session_id, conn, app_state=request.app.state):
             if chunk.startswith("data: "):
                 token = chunk[len("data: "):]
                 if token.strip() == "[DONE]":
-                    # Send a final event that clears the spinner
-                    yield "event: message\ndata: \n\n"
+                    yield "data: [DONE]\n\n"
                     return
-                # Unescape for HTML display
-                decoded = token.replace("\\n", "\n")
-                # HTMX sse-swap appends the data payload as HTML
-                html_token = decoded.replace("\n", "<br>")
-                yield f"event: message\ndata: {html_token}\n\n"
+                yield f"data: {token}\n\n"
 
     return StreamingResponse(
         _sse_with_event_wrap(),

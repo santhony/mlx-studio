@@ -34,7 +34,7 @@ router = APIRouter(prefix="/notebook")
 templates = Jinja2Templates(directory="templates")
 
 TEXT_SERVER = "http://127.0.0.1:8766"
-DEFAULT_TIMEOUT = 10  # seconds for code execution
+DEFAULT_TIMEOUT = 300  # seconds for code execution
 
 
 # ── DB helpers ─────────────────────────────────────────────────────────────────
@@ -289,17 +289,29 @@ async def generate_code(notebook_id: int, cell_id: int, request: Request):
     _touch_notebook(conn, notebook_id)
     conn.commit()
 
-    # Return a fragment with an SSE-connected pre/code block that streams in the code
+    # Return a fragment with a JS EventSource that streams tokens into the code block
     return HTMLResponse(f"""
-<div id="cell-code-{cell_id}"
-     hx-ext="sse"
-     sse-connect="/notebook/{notebook_id}/cells/{cell_id}/stream"
-     sse-swap="message"
-     hx-swap="beforeend"
-     class="cell-code-block">
+<div id="cell-code-{cell_id}" class="cell-code-block">
     <pre><code id="code-content-{cell_id}" class="language-python"></code></pre>
 </div>
 <div id="cell-output-{cell_id}" class="cell-output"></div>
+<script>
+(function() {{
+    const el = document.getElementById("code-content-{cell_id}");
+    const es = new EventSource("/notebook/{notebook_id}/cells/{cell_id}/stream");
+    let code = "";
+    es.onmessage = function(e) {{
+        if (e.data === "[DONE]") {{
+            es.close();
+            if (typeof Prism !== "undefined") Prism.highlightElement(el);
+            return;
+        }}
+        code += e.data.replace(/\\\\n/g, "\\n");
+        el.textContent = code;
+    }};
+    es.onerror = function() {{ es.close(); }};
+}})();
+</script>
 """)
 
 
@@ -314,13 +326,14 @@ async def stream_code(notebook_id: int, cell_id: int, request: Request):
     client: httpx.AsyncClient = request.app.state.http_client
 
     async def _wrapped() -> AsyncGenerator[str, None]:
-        """Stream tokens; on done event, append Prism highlight trigger."""
         async for chunk in _stream_code(client, cell_id, cell["prompt"], conn, app_state=request.app.state):
             if chunk.startswith("event: done"):
-                # Signal HTMX to stop and trigger re-highlight
-                yield "event: message\ndata: <script>if(typeof Prism!=='undefined'){Prism.highlightElement(document.getElementById('code-content-" + str(cell_id) + "'));}</script>\n\n"
+                yield "data: [DONE]\n\n"
                 return
-            yield chunk
+            # _stream_code yields "event: message\ndata: <token>\n\n" — extract just the token
+            if "data: " in chunk:
+                token = chunk.split("data: ", 1)[1].rstrip("\n")
+                yield f"data: {token}\n\n"
 
     return StreamingResponse(
         _wrapped(),

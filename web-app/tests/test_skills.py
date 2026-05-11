@@ -13,8 +13,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from skills import (
     _parse_skill_file,
-    _vec_to_blob,
-    _blob_to_vec,
+    vec_to_blob,
+    blob_to_vec,
 )
 
 
@@ -85,10 +85,10 @@ class TestVectorSerialization:
     def test_vec_to_blob_and_back(self):
         """Test that vector -> blob -> vector round-trip preserves data."""
         vec = [1.0, 2.5, -0.3, 0.0, 100.5]
-        blob = _vec_to_blob(vec)
+        blob = vec_to_blob(vec)
         assert isinstance(blob, bytes)
 
-        result = _blob_to_vec(blob)
+        result = blob_to_vec(blob)
         assert isinstance(result, np.ndarray)
         np.testing.assert_array_almost_equal(result, vec, decimal=5)
 
@@ -96,26 +96,26 @@ class TestVectorSerialization:
         """Test blob serialization with typical embedding vector (384-dim)."""
         # Simulate a realistic embedding vector (all-MiniLM-L6-v2 output)
         embedding = np.random.randn(384).astype(np.float32).tolist()
-        blob = _vec_to_blob(embedding)
+        blob = vec_to_blob(embedding)
         assert isinstance(blob, bytes)
         assert len(blob) == 384 * 4  # float32 = 4 bytes per element
 
-        result = _blob_to_vec(blob)
+        result = blob_to_vec(blob)
         assert result.shape == (384,)
         np.testing.assert_array_almost_equal(result, embedding, decimal=5)
 
     def test_vec_to_blob_empty(self):
         """Test serialization of empty vector."""
         vec = []
-        blob = _vec_to_blob(vec)
+        blob = vec_to_blob(vec)
         assert isinstance(blob, bytes)
         assert len(blob) == 0
 
     def test_vec_to_blob_single_element(self):
         """Test serialization of single-element vector."""
         vec = [3.14159]
-        blob = _vec_to_blob(vec)
-        result = _blob_to_vec(blob)
+        blob = vec_to_blob(vec)
+        result = blob_to_vec(blob)
         np.testing.assert_almost_equal(result[0], 3.14159, decimal=5)
 
 

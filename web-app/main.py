@@ -28,6 +28,7 @@ from routers import skills as skills_router
 from routers import agents as agents_router
 from routers import settings as settings_router
 from routers import finetune as finetune_router
+from routers import rag as rag_router
 from routers.settings import init_default_allowlist
 from skills import embed_all_skills, SkillsWatcher
 
@@ -43,7 +44,7 @@ IMAGE_SERVER = "http://127.0.0.1:8765"
 TEXT_SERVER = "http://127.0.0.1:8766"
 
 # Path to qwen-studio/ directory (parent of web-app/)
-STUDIO_ROOT = Path(__file__).parent.parent
+STUDIO_ROOT = Path(__file__).resolve().parent.parent
 DB_PATH = STUDIO_ROOT / "data" / "studio.db"
 
 templates = Jinja2Templates(directory="templates")
@@ -95,6 +96,7 @@ app.include_router(skills_router.router)
 app.include_router(agents_router.router)
 app.include_router(settings_router.router)
 app.include_router(finetune_router.router)
+app.include_router(rag_router.router)
 
 
 # ── Health / status endpoints ─────────────────────────────────────────────────

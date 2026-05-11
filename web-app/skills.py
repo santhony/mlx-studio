@@ -62,7 +62,7 @@ def _parse_skill_file(path: Path) -> dict:
 
 # ── Embedding helpers ─────────────────────────────────────────────────────────
 
-def _embed_text(text: str) -> Optional[list[float]]:
+def embed_text(text: str) -> Optional[list[float]]:
     """
     Call the text server /embed endpoint synchronously.
     Returns a list of floats or None on failure.
@@ -80,13 +80,13 @@ def _embed_text(text: str) -> Optional[list[float]]:
         return None
 
 
-def _vec_to_blob(vec: list[float]) -> bytes:
+def vec_to_blob(vec: list[float]) -> bytes:
     """Serialize a float list to a float32 BLOB for SQLite storage."""
     arr = np.array(vec, dtype=np.float32)
     return arr.tobytes()
 
 
-def _blob_to_vec(blob: bytes) -> np.ndarray:
+def blob_to_vec(blob: bytes) -> np.ndarray:
     """Deserialize a float32 BLOB from SQLite to a numpy array."""
     return np.frombuffer(blob, dtype=np.float32)
 
@@ -111,13 +111,13 @@ def upsert_skill(conn: sqlite3.Connection, path: Path) -> bool:
         return True
 
     # Embed the skill content (use name + description + content for richer retrieval)
-    embed_text = f"{skill['name']}\n{skill['description']}\n{skill['content']}"
-    vec = _embed_text(embed_text)
+    skill_text = f"{skill['name']}\n{skill['description']}\n{skill['content']}"
+    vec = embed_text(skill_text)
     if vec is None:
         log.warning("failed to embed skill: %s", path.name)
         return False
 
-    blob = _vec_to_blob(vec)
+    blob = vec_to_blob(vec)
     conn.execute(
         """
         INSERT INTO skill_embeddings (filepath, name, mtime, embedding_blob)
@@ -184,7 +184,7 @@ def retrieve_skills(
     if not rows:
         return []
 
-    query_vec = _embed_text(query)
+    query_vec = embed_text(query)
     if query_vec is None:
         return []
 
@@ -195,7 +195,7 @@ def retrieve_skills(
     names = [r["name"] for r in rows]
     blobs = [r["embedding_blob"] for r in rows]
 
-    matrix = np.stack([_blob_to_vec(b) for b in blobs])  # shape (n, dim)
+    matrix = np.stack([blob_to_vec(b) for b in blobs])  # shape (n, dim)
     norms = np.linalg.norm(matrix, axis=1, keepdims=True)
     normalized = matrix / (norms + 1e-8)
     similarities = np.dot(normalized, query_norm)

@@ -3,6 +3,87 @@
 {% block content %}
 <h1>Settings</h1>
 
+<h2>Inference Servers</h2>
+<p style="color: var(--text-muted); margin-bottom: 1rem; font-size: 0.9rem;">
+    Start and stop the image and text servers independently. Status refreshes every 5s.
+</p>
+<div class="card" style="margin-bottom: 2rem;">
+    <table style="width: 100%; border-collapse: collapse;">
+        <tr style="border-bottom: 1px solid var(--border);">
+            <td style="padding: 0.75rem 0; font-weight: 500;">Image server <span style="color: var(--text-muted); font-size: 0.8rem;">(port 8765)</span></td>
+            <td style="padding: 0.75rem 0; text-align: right;">
+                {% set name = "image" %}{% set status = image_status %}
+                {% include "server_status_badge.html" %}
+            </td>
+        </tr>
+        <tr style="border-bottom: 1px solid var(--border);">
+            <td style="padding: 0.75rem 0; font-weight: 500;">Text server <span style="color: var(--text-muted); font-size: 0.8rem;">(port 8766)</span></td>
+            <td style="padding: 0.75rem 0; text-align: right;">
+                {% set name = "text" %}{% set status = text_status %}
+                {% include "server_status_badge.html" %}
+            </td>
+        </tr>
+        <tr style="border-bottom: 1px solid var(--border);">
+            <td style="padding: 0.75rem 0; font-weight: 500;">DS4 server <span style="color: var(--text-muted); font-size: 0.8rem;">(port 8767, only when backend is DS4)</span></td>
+            <td style="padding: 0.75rem 0; text-align: right;">
+                {% set name = "ds4" %}{% set status = ds4_status %}
+                {% include "server_status_badge.html" %}
+            </td>
+        </tr>
+        <tr>
+            <td style="padding: 0.75rem 0; font-weight: 500;">Web app <span style="color: var(--text-muted); font-size: 0.8rem;">(port 8080)</span></td>
+            <td style="padding: 0.75rem 0; text-align: right;">
+                <span style="color: var(--green); margin-right: 0.5rem;">● running</span>
+                <form method="post" action="/settings/webapp/restart" style="display:inline;">
+                    <button type="submit" class="secondary" style="padding: 0.2rem 0.6rem; font-size: 0.8rem;">Restart</button>
+                </form>
+            </td>
+        </tr>
+    </table>
+</div>
+
+<h2>Text Model</h2>
+<p style="color: var(--text-muted); margin-bottom: 1rem; font-size: 0.9rem;">
+    Saved to <code>data/config.env</code>. Takes effect on next text-server restart.
+    Ollama models require <code>ollama serve</code> running and the model pulled.
+    DS4 requires the <code>antirez/ds4</code> repo built at <code>../ds4/</code> with <code>ds4flash.gguf</code> downloaded;
+    starting the text-server will launch <code>ds4-server</code> on port 8767 automatically (first load ~1&ndash;3 min for the 81 GB model).
+</p>
+<div class="card" style="margin-bottom: 2rem;">
+    <form method="post" action="/settings/model/text" style="display: flex; gap: 0.75rem; align-items: flex-end;">
+        <div class="form-group" style="flex: 1">
+            <label for="model_selection">Model</label>
+            <select id="model_selection" name="model_selection" style="width: 100%; padding: 0.5rem; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius);">
+                <optgroup label="MLX (Apple Silicon, in-process)">
+                {% for backend, id, label in text_models %}
+                {% if backend == "mlx" %}
+                <option value="{{ backend }}:{{ id }}" {% if backend + ':' + id == current_selection %}selected{% endif %}>{{ label }}</option>
+                {% endif %}
+                {% endfor %}
+                </optgroup>
+                <optgroup label="Ollama (local server)">
+                {% for backend, id, label in text_models %}
+                {% if backend == "ollama" %}
+                <option value="{{ backend }}:{{ id }}" {% if backend + ':' + id == current_selection %}selected{% endif %}>{{ label }}</option>
+                {% endif %}
+                {% endfor %}
+                </optgroup>
+                <optgroup label="DS4 (DeepSeek V4 Flash, antirez/ds4)">
+                {% for backend, id, label in text_models %}
+                {% if backend == "ds4" %}
+                <option value="{{ backend }}:{{ id }}" {% if backend + ':' + id == current_selection %}selected{% endif %}>{{ label }}</option>
+                {% endif %}
+                {% endfor %}
+                </optgroup>
+            </select>
+        </div>
+        <button type="submit">Save</button>
+    </form>
+    <p style="margin-top: 0.75rem; font-size: 0.8rem; color: var(--text-muted)">
+        Active: <code>{{ current_text_model }}</code> ({{ current_backend }})
+    </p>
+</div>
+
 <h2>Filesystem Allowlist</h2>
 <p style="color: var(--text-muted); margin-bottom: 1rem; font-size: 0.9rem;">
     Agent filesystem tools can only access directories in this list.

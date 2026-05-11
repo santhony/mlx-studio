@@ -164,3 +164,27 @@ body:has(#messages) .main-content {
     display: flex;
     flex-direction: column;
 }
+
+.msg-content { white-space: pre-wrap; word-wrap: break-word; }
+
+/* Reasoning / chain-of-thought blocks (DS4 backend wraps these in <think> tags). */
+.msg-content .thinking {
+    color: var(--text-muted);
+    font-style: italic;
+    font-size: 0.9em;
+    border-left: 2px solid var(--accent);
+    padding: 0.4rem 0.75rem;
+    margin: 0.4rem 0;
+    background: rgba(124, 106, 240, 0.06);
+    white-space: pre-wrap;
+}
+.msg-content .thinking::before {
+    content: "thinking";
+    display: block;
+    font-style: normal;
+    font-size: 0.7em;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--accent);
+    margin-bottom: 0.25rem;
+}

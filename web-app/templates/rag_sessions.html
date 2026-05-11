@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}RAG Chat: {{ corpus.name }} — Qwen Studio{% endblock %}
+{% block content %}
+<h1>RAG Chat: {{ corpus.name }}</h1>
+
+<div style="margin-bottom: 1.5rem;">
+    <a href="/rag/{{ corpus_id }}" style="color: var(--text-muted); font-size: 0.9rem;">← Back to corpus</a>
+</div>
+
+<div class="card">
+    <form method="post" action="/rag/{{ corpus_id }}/chat/sessions" style="display: flex; gap: 0.75rem; align-items: flex-end;">
+        <div class="form-group" style="flex: 1">
+            <label for="name">Session name (optional)</label>
+            <input type="text" id="name" name="name" placeholder="New RAG chat">
+        </div>
+        <button type="submit">New Session</button>
+    </form>
+</div>
+
+{% if sessions %}
+<div>
+    {% for session in sessions %}
+    <div class="card" style="display: flex; align-items: center; justify-content: space-between; padding: 1rem 1.5rem; margin-bottom: 0.5rem;">
+        <a href="/rag/{{ corpus_id }}/chat/{{ session.id }}" style="color: var(--text); text-decoration: none; flex: 1;">
+            <strong>{{ session.name }}</strong>
+            <span style="color: var(--text-muted); font-size: 0.8rem; margin-left: 1rem;">{{ session.updated_at }}</span>
+        </a>
+        <form method="post" action="/rag/{{ corpus_id }}/chat/sessions/{{ session.id }}/delete" style="margin: 0;">
+            <button type="submit" class="secondary" style="padding: 0.25rem 0.75rem; font-size: 0.8rem;">Delete</button>
+        </form>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<p style="color: var(--text-muted)">No chat sessions yet. Create one above.</p>
+{% endif %}
+{% endblock %}

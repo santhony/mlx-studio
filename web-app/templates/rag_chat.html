@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}{{ session.name }} — Chat — Qwen Studio{% endblock %}
+{% block title %}RAG Chat: {{ corpus.name }} — Qwen Studio{% endblock %}
 {% block content %}
 <div style="display: flex; gap: 1.5rem; height: calc(100vh - 120px);">
 
@@ -7,10 +7,10 @@
     <div style="width: 220px; flex-shrink: 0; overflow-y: auto;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
             <h2 style="margin: 0;">Sessions</h2>
-            <a href="/chat/" style="font-size: 0.8rem; color: var(--accent);">+ New</a>
+            <a href="/rag/{{ corpus_id }}/chat/" style="font-size: 0.8rem; color: var(--accent);">+ New</a>
         </div>
         {% for s in sessions %}
-        <a href="/chat/{{ s.id }}"
+        <a href="/rag/{{ corpus_id }}/chat/{{ s.id }}"
            style="display: block; padding: 0.5rem 0.75rem; border-radius: var(--radius); text-decoration: none;
                   color: {% if s.id == session.id %}var(--text){% else %}var(--text-muted){% endif %};
                   background: {% if s.id == session.id %}var(--surface){% else %}transparent{% endif %};
@@ -23,7 +23,16 @@
 
     <!-- Main chat area -->
     <div style="flex: 1; display: flex; flex-direction: column; min-width: 0;">
-        <h1 style="margin-bottom: 1rem;">{{ session.name }}</h1>
+        <h1 style="margin-bottom: 0.5rem;">{{ corpus.name }}</h1>
+        <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1rem;">
+            Chatting with {{ chunk_count }} chunk{{ 's' if chunk_count != 1 else '' }} from {{ source_count }} source{{ 's' if source_count != 1 else '' }}
+        </p>
+
+        {% if chunk_count == 0 %}
+        <div class="card" style="background: var(--yellow-bg, #332b00); border-color: var(--yellow, #ffcc00); margin-bottom: 1rem; padding: 0.75rem;">
+            No documents have been indexed for this corpus. <a href="/rag/{{ corpus_id }}">Add and index sources first.</a>
+        </div>
+        {% endif %}
 
         <!-- Messages -->
         <div id="messages"
@@ -31,7 +40,19 @@
                     padding: 0.5rem 0; margin-bottom: 1rem;">
             {% for msg in messages %}
             <div class="msg msg-{{ msg.role }}">
-                <div class="msg-content" data-raw>{{ msg.content }}</div>
+                <div class="msg-content">{{ msg.content }}</div>
+                {% if msg.role == 'assistant' and msg.citations %}
+                <div class="msg-citations">
+                    <details>
+                        <summary>Sources ({{ msg.citations|length }})</summary>
+                        <ol>
+                            {% for citation in msg.citations %}
+                            <li><code>{{ citation.source_file }}</code> (chunk {{ citation.chunk_index }}): <em>"{{ citation.excerpt[:150] }}..."</em></li>
+                            {% endfor %}
+                        </ol>
+                    </details>
+                </div>
+                {% endif %}
             </div>
             {% else %}
             <p style="color: var(--text-muted); text-align: center; margin: auto;">
@@ -43,21 +64,13 @@
         <!-- Input form -->
         <div class="card" style="margin-bottom: 0; padding: 1rem;">
             <form
-                hx-post="/chat/{{ session.id }}/send"
+                hx-post="/rag/{{ corpus_id }}/chat/{{ session.id }}/send"
                 hx-target="#messages"
                 hx-swap="beforeend"
                 hx-on::after-request="this.reset(); document.getElementById('messages').scrollTop = 99999"
             >
-                <div class="form-row" style="margin-bottom: 0;">
-                    <div class="form-group">
-                        <textarea
-                            name="content"
-                            placeholder="Ask anything..."
-                            rows="2"
-                            style="resize: none;"
-                            onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault(); this.form.requestSubmit();}"
-                        ></textarea>
-                    </div>
+                <div style="display: flex; gap: 0.5rem;">
+                    <input type="text" name="content" placeholder="Ask about your documents..." style="flex: 1;" autocomplete="off">
                     <button type="submit">Send</button>
                 </div>
             </form>
@@ -86,39 +99,37 @@
     border-color: var(--accent);
     color: #fff;
 }
-</style>
-<script>
-// Global renderer: takes raw text containing <think>...</think> sentinels and
-// returns HTML with thinking blocks wrapped in <span class="thinking">.
-// Used both for live SSE streaming and for messages rendered on page load.
-window.renderChatContent = function(raw) {
-    function esc(s) {
-        return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-    }
-    let out = "";
-    let i = 0;
-    while (i < raw.length) {
-        const open = raw.indexOf("<think>", i);
-        if (open === -1) { out += esc(raw.slice(i)); break; }
-        if (open > i) out += esc(raw.slice(i, open));
-        const close = raw.indexOf("</think>", open + 7);
-        if (close === -1) {
-            // Open tag without close yet — still streaming the reasoning section.
-            out += '<span class="thinking">' + esc(raw.slice(open + 7)) + "</span>";
-            break;
-        }
-        out += '<span class="thinking">' + esc(raw.slice(open + 7, close)) + "</span>";
-        i = close + 8;
-    }
-    return out;
-};
 
-// Render any historic messages already on the page.
-document.addEventListener("DOMContentLoaded", function() {
-    document.querySelectorAll(".msg-content[data-raw]").forEach(function(el) {
-        const raw = el.textContent;
-        el.innerHTML = window.renderChatContent(raw);
-    });
-});
-</script>
+.msg-citations {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    margin-top: 0.5rem;
+    padding-left: 0.9rem;
+}
+
+.msg-citations details {
+    cursor: pointer;
+}
+
+.msg-citations summary {
+    user-select: none;
+}
+
+.msg-citations ol {
+    margin-top: 0.5rem;
+    padding-left: 1.5rem;
+    line-height: 1.5;
+}
+
+.msg-citations li {
+    margin-bottom: 0.25rem;
+}
+
+.msg-citations code {
+    background: var(--surface);
+    padding: 0.1rem 0.3rem;
+    border-radius: 3px;
+    font-size: 0.8rem;
+}
+</style>
 {% endblock %}

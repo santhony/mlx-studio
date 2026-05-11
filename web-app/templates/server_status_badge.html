@@ -1,0 +1,26 @@
+<span id="server-{{ name }}-badge"
+    hx-get="/settings/server/{{ name }}/status"
+    hx-trigger="every 5s"
+    hx-swap="outerHTML">
+    {% if status == "running" %}
+    <span style="color: var(--green)">● running</span>
+    <button
+        hx-post="/settings/server/{{ name }}/stop"
+        hx-target="#server-{{ name }}-badge"
+        hx-swap="outerHTML"
+        class="secondary"
+        style="padding: 0.2rem 0.6rem; font-size: 0.8rem; margin-left: 0.5rem;">
+        Stop
+    </button>
+    {% else %}
+    <span style="color: var(--text-muted)">○ stopped</span>
+    <button
+        hx-post="/settings/server/{{ name }}/start"
+        hx-target="#server-{{ name }}-badge"
+        hx-swap="outerHTML"
+        class="secondary"
+        style="padding: 0.2rem 0.6rem; font-size: 0.8rem; margin-left: 0.5rem;">
+        Start
+    </button>
+    {% endif %}
+</span>

@@ -99,5 +99,50 @@ def init_schema(conn: sqlite3.Connection) -> None:
             key   TEXT PRIMARY KEY,
             value TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS corpora (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            name        TEXT    NOT NULL,
+            description TEXT    NOT NULL DEFAULT '',
+            created_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+            updated_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS corpus_sources (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            corpus_id       INTEGER NOT NULL REFERENCES corpora(id) ON DELETE CASCADE,
+            source_type     TEXT    NOT NULL CHECK(source_type IN ('directory', 'url', 'url_spider')),
+            path            TEXT    NOT NULL,
+            last_indexed_at TEXT,
+            created_at      TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS corpus_chunks (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            corpus_id   INTEGER NOT NULL REFERENCES corpora(id) ON DELETE CASCADE,
+            source_id   INTEGER NOT NULL REFERENCES corpus_sources(id) ON DELETE CASCADE,
+            source_file TEXT    NOT NULL,
+            chunk_index INTEGER NOT NULL,
+            content     TEXT    NOT NULL,
+            embedding   BLOB,
+            created_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS rag_sessions (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            corpus_id   INTEGER NOT NULL REFERENCES corpora(id) ON DELETE CASCADE,
+            name        TEXT    NOT NULL,
+            created_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+            updated_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS rag_messages (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id    INTEGER NOT NULL REFERENCES rag_sessions(id) ON DELETE CASCADE,
+            role          TEXT    NOT NULL CHECK(role IN ('user', 'assistant', 'system')),
+            content       TEXT    NOT NULL,
+            citations_json TEXT,
+            created_at    TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+        );
     """)
     conn.commit()

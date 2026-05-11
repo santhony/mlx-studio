@@ -3,14 +3,19 @@ qwen-image-server — FastAPI server for Qwen-Image-2512 inference.
 
 Runs on port 8765. Internal use only (127.0.0.1).
 
-Inherits the MPS SDPA monkey-patch and GQA head-expansion fix from
-bluesky-alt-reimagine/local-server/qwen_server.py, rewritten for FastAPI.
+Endpoints:
+  POST /generate              { prompt, width?, height? } → { job_id }
+  GET  /status/{job_id}       → { status, step, total, image? }
+  POST /cancel/{job_id}       → { ok }
+  GET  /health                → { status, model }
 """
 
 import base64
 import io
 import logging
 import os
+import threading
+import uuid
 from contextlib import asynccontextmanager
 
 import uvicorn
@@ -27,6 +32,14 @@ logging.basicConfig(
 )
 log = logging.getLogger("qwen-image-server")
 
+
+class _NoHealthFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        return "GET /health" not in record.getMessage()
+
+
+logging.getLogger("uvicorn.access").addFilter(_NoHealthFilter())
+
 MODEL_ID = "Qwen/Qwen-Image-2512"
 HOST = "127.0.0.1"
 PORT = 8765
@@ -34,6 +47,11 @@ PORT = 8765
 _pipe = None
 _device = None
 _is_loading = False
+_pipe_lock = threading.Lock()
+
+# job_id → { status, step, total, image, error, cancel }
+_jobs: dict[str, dict] = {}
+_jobs_lock = threading.Lock()
 
 
 def _patch_sdpa_for_mps() -> None:
@@ -131,6 +149,52 @@ def _load_pipeline():
         _is_loading = False
 
 
+def _run_generation(job_id: str, prompt: str, width: int, height: int) -> None:
+    """Run in a background thread. Updates _jobs[job_id] with progress."""
+    with _jobs_lock:
+        _jobs[job_id]["status"] = "generating"
+
+    def _step_callback(pipe, step: int, timestep, callback_kwargs):
+        with _jobs_lock:
+            job = _jobs.get(job_id, {})
+            job["step"] = step + 1
+            if job.get("cancel"):
+                raise InterruptedError("cancelled")
+        return callback_kwargs
+
+    try:
+        with _pipe_lock:
+            result = _pipe(
+                prompt=prompt,
+                negative_prompt="blurry, low quality, distorted, watermark",
+                width=width,
+                height=height,
+                num_inference_steps=30,
+                callback_on_step_end=_step_callback,
+            )
+
+        image = result.images[0]
+        buf = io.BytesIO()
+        image.save(buf, format="PNG")
+        b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+
+        with _jobs_lock:
+            _jobs[job_id]["status"] = "done"
+            _jobs[job_id]["image"] = b64
+        log.info("generation complete: %s", job_id)
+
+    except InterruptedError:
+        with _jobs_lock:
+            _jobs[job_id]["status"] = "cancelled"
+        log.info("generation cancelled: %s", job_id)
+
+    except Exception as exc:
+        log.exception("generation failed: %s", job_id)
+        with _jobs_lock:
+            _jobs[job_id]["status"] = "failed"
+            _jobs[job_id]["error"] = str(exc)
+
+
 # ── Pydantic models ────────────────────────────────────────────────────────────
 
 class GenerateRequest(BaseModel):
@@ -169,7 +233,8 @@ async def generate(req: GenerateRequest):
 
     # Lazy-load model on first request
     if _pipe is None:
-        _load_pipeline()
+        import asyncio
+        await asyncio.get_running_loop().run_in_executor(None, _load_pipeline)
 
     # Clamp and snap dimensions to multiples of 64
     width = min(max(req.width, 64), 1024)
@@ -177,23 +242,51 @@ async def generate(req: GenerateRequest):
     width = (width // 64) * 64
     height = (height // 64) * 64
 
-    try:
-        result = _pipe(
-            prompt=req.prompt,
-            negative_prompt="blurry, low quality, distorted, watermark",
-            width=width,
-            height=height,
-            num_inference_steps=30,
-        )
-        image = result.images[0]
-    except Exception as exc:
-        log.exception("generation failed")
-        raise HTTPException(status_code=500, detail=f"generation failed: {exc}") from exc
+    job_id = str(uuid.uuid4())
+    with _jobs_lock:
+        _jobs[job_id] = {
+            "status": "queued", "step": 0, "total": 30, "cancel": False,
+            "prompt": req.prompt, "width": width, "height": height,
+        }
 
-    buf = io.BytesIO()
-    image.save(buf, format="PNG")
-    b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
-    return {"image": b64}
+    threading.Thread(
+        target=_run_generation,
+        args=(job_id, req.prompt, width, height),
+        daemon=True,
+    ).start()
+
+    return {"job_id": job_id}
+
+
+@app.get("/status/{job_id}")
+async def job_status(job_id: str):
+    with _jobs_lock:
+        job = _jobs.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="job not found")
+    result = {
+        "status": job["status"],
+        "step": job["step"],
+        "total": job["total"],
+        "prompt": job.get("prompt", ""),
+        "width": job.get("width", 0),
+        "height": job.get("height", 0),
+    }
+    if job["status"] == "done":
+        result["image"] = job["image"]
+    if job["status"] == "failed":
+        result["error"] = job.get("error", "unknown error")
+    return result
+
+
+@app.post("/cancel/{job_id}")
+async def cancel_job(job_id: str):
+    with _jobs_lock:
+        job = _jobs.get(job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="job not found")
+        job["cancel"] = True
+    return {"ok": True}
 
 
 if __name__ == "__main__":

@@ -13,6 +13,7 @@ Routes:
   POST /chat/sessions/{session_id}/delete → delete session
 """
 
+import json
 import sqlite3
 from typing import AsyncGenerator
 
@@ -22,11 +23,16 @@ from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 
 from skills import retrieve_skills, format_skills_for_context
+from chat_tools import TOOL_SCHEMAS, dispatch_tool, get_allowed_dirs
 
 router = APIRouter(prefix="/chat")
 templates = Jinja2Templates(directory="templates")
 
 TEXT_SERVER = "http://127.0.0.1:8766"
+
+# Maximum tool-call rounds per user turn. Prevents runaway loops if the model
+# never decides to stop calling tools.
+MAX_TOOL_ROUNDS = 6
 
 
 # ── Session helpers ────────────────────────────────────────────────────────────
@@ -77,18 +83,18 @@ async def _proxy_sse(
     app_state=None,
 ) -> AsyncGenerator[str, None]:
     """
-    Fetch the pending assistant message for session_id from the text server,
-    stream it as SSE to the browser, and persist the complete response to SQLite.
+    Drive the chat turn: call the text server with tool schemas, parse any
+    tool calls the model emits, execute them, and loop until the model
+    returns a tool-call-free reply. Forward text and reasoning tokens to the
+    browser as plain SSE; render tool invocations and results inline using
+    `<tool>` / `<tool_result>` sentinels.
     """
-    # Retrieve all messages for context
-    messages = _get_messages(conn, session_id)
-
-    # Build messages list with optional skills system prompt
-    msg_list = [{"role": m["role"], "content": m["content"]} for m in messages]
+    # Retrieve history + assemble messages list, with optional skills prompt.
+    history = _get_messages(conn, session_id)
+    msg_list = [{"role": m["role"], "content": m["content"]} for m in history]
     if msg_list:
-        # Use the last user message as the retrieval query
         last_user = next(
-            (m["content"] for m in reversed(messages) if m["role"] == "user"),
+            (m["content"] for m in reversed(history) if m["role"] == "user"),
             None,
         )
         if last_user:
@@ -99,49 +105,133 @@ async def _proxy_sse(
             if app_state is not None:
                 app_state.last_injected_skills = [s["name"] for s in skills]
 
-    payload = {
-        "messages": msg_list,
-        "max_tokens": 2048,
-    }
+    # Tool-use system prompt. Without this, DS4's training prior makes the
+    # model refuse URL fetching ("I cannot browse the web") even when fetch_url
+    # is in the tool list. Explicit endorsement overrides the safety default.
+    msg_list.insert(0, {
+        "role": "system",
+        "content": (
+            "You run inside a local Qwen Studio session. The tools listed in this "
+            "request are real, executable, and authorized by the user. When a task "
+            "would benefit from web access, code execution, or filesystem access, "
+            "CALL the corresponding tool — do not refuse. Filesystem tools are "
+            "restricted to an allowlist enforced server-side; refusal on the basis "
+            "of supposed sandbox limits is incorrect. Do not invent rules about "
+            "URL fetching or HTTP requests; if a tool exists for it, use it."
+        ),
+    })
 
-    full_response: list[str] = []
+    allowed_dirs = get_allowed_dirs(conn)
+    # Accumulates the full visible content (including sentinels) for DB persistence.
+    persisted_chunks: list[str] = []
 
-    try:
-        async with client.stream(
-            "POST",
-            f"{TEXT_SERVER}/chat",
-            json=payload,
-            timeout=300.0,
-        ) as response:
-            response.raise_for_status()
-            async for line in response.aiter_lines():
-                if not line.startswith("data: "):
-                    continue
-                token = line[len("data: "):]
-                if token == "[DONE]":
-                    break
-                if token.startswith("ERROR:"):
-                    yield f"data: {token}\n\n"
-                    return
-                # Unescape newlines (escaped in text server for SSE safety)
-                decoded = token.replace("\\n", "\n")
-                full_response.append(decoded)
-                # Re-escape for SSE wire format before sending to browser
-                reescaped = decoded.replace("\n", "\\n")
-                yield f"data: {reescaped}\n\n"
-    except httpx.HTTPStatusError as exc:
-        yield f"data: ERROR: text server returned {exc.response.status_code}\n\n"
-        return
-    except (httpx.ConnectError, httpx.TimeoutException) as exc:
-        yield f"data: ERROR: text server unavailable: {exc}\n\n"
-        return
+    for round_idx in range(MAX_TOOL_ROUNDS + 1):
+        payload = {
+            "messages": msg_list,
+            "max_tokens": 2048,
+            "tools": TOOL_SCHEMAS,
+        }
+        # Tool calls collected during this round, to be executed after the stream ends.
+        round_tool_calls: list[dict] = []
 
-    # Persist completed assistant response
-    complete_text = "".join(full_response)
+        try:
+            async with client.stream(
+                "POST",
+                f"{TEXT_SERVER}/chat",
+                json=payload,
+                timeout=300.0,
+            ) as response:
+                response.raise_for_status()
+                async for line in response.aiter_lines():
+                    if not line.startswith("data: "):
+                        continue
+                    token = line[len("data: "):]
+                    if token == "[DONE]":
+                        break
+                    if token.startswith("ERROR:"):
+                        yield f"data: {token}\n\n"
+                        return
+                    # Intercept tool_call sentinels — they go to the dispatcher,
+                    # not to the browser.
+                    if token.startswith("<tool_call>") and token.endswith("</tool_call>"):
+                        body = token[len("<tool_call>"):-len("</tool_call>")]
+                        try:
+                            call = json.loads(body)
+                        except json.JSONDecodeError:
+                            continue
+                        round_tool_calls.append(call)
+                        # Render a visible "calling tool" block.
+                        visible_call = (
+                            f'<tool name="{_safe(call.get("name", ""))}">'
+                            f'{_safe(call.get("arguments", ""))}'
+                            f'</tool>'
+                        )
+                        persisted_chunks.append(visible_call)
+                        yield f"data: {visible_call.replace(chr(10), chr(92) + 'n')}\n\n"
+                        continue
+
+                    decoded = token.replace("\\n", "\n")
+                    persisted_chunks.append(decoded)
+                    yield f"data: {decoded.replace(chr(10), chr(92) + 'n')}\n\n"
+        except httpx.HTTPStatusError as exc:
+            yield f"data: ERROR: text server returned {exc.response.status_code}\n\n"
+            return
+        except (httpx.ConnectError, httpx.TimeoutException) as exc:
+            yield f"data: ERROR: text server unavailable: {exc}\n\n"
+            return
+
+        if not round_tool_calls:
+            # Model gave a tool-call-free reply. Done.
+            break
+
+        if round_idx == MAX_TOOL_ROUNDS:
+            warning = f"\n\n[stopped: reached max tool-call rounds ({MAX_TOOL_ROUNDS})]"
+            persisted_chunks.append(warning)
+            yield f"data: {warning.replace(chr(10), chr(92) + 'n')}\n\n"
+            break
+
+        # Append the assistant turn (with tool_calls) and each tool result so
+        # the next iteration carries proper conversational state to the model.
+        msg_list.append({
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {
+                    "id": c.get("id", f"call_{i}"),
+                    "type": "function",
+                    "function": {
+                        "name": c.get("name", ""),
+                        "arguments": c.get("arguments", ""),
+                    },
+                }
+                for i, c in enumerate(round_tool_calls)
+            ],
+        })
+        for call in round_tool_calls:
+            result = await dispatch_tool(
+                call.get("name", ""),
+                call.get("arguments", ""),
+                allowed_dirs,
+            )
+            visible_result = f"<tool_result>{_safe(result)}</tool_result>"
+            persisted_chunks.append(visible_result)
+            yield f"data: {visible_result.replace(chr(10), chr(92) + 'n')}\n\n"
+            msg_list.append({
+                "role": "tool",
+                "content": result,
+                "tool_call_id": call.get("id", ""),
+            })
+
+    complete_text = "".join(persisted_chunks)
     if complete_text.strip():
         _append_message(conn, session_id, "assistant", complete_text)
 
     yield "data: [DONE]\n\n"
+
+
+def _safe(s: str) -> str:
+    """Replace closing-tag sequences inside payloads so sentinels stay parseable."""
+    return s.replace("</tool>", "</tool >").replace("</tool_result>", "</tool_result >")
 
 
 # ── Routes ─────────────────────────────────────────────────────────────────────

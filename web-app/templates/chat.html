@@ -88,28 +88,41 @@
 }
 </style>
 <script>
-// Global renderer: takes raw text containing <think>...</think> sentinels and
-// returns HTML with thinking blocks wrapped in <span class="thinking">.
-// Used both for live SSE streaming and for messages rendered on page load.
+// Global renderer: parses sentinel markers in raw chat text and returns HTML.
+// Sentinels (emitted by the text-server / chat router):
+//   <think>...</think>             reasoning / chain of thought
+//   <tool name="...">JSON</tool>   the model called a tool with these args
+//   <tool_result>...</tool_result> the result returned for the previous call
+// Used by both the live SSE stream and historic messages on page load.
 window.renderChatContent = function(raw) {
     function esc(s) {
         return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     }
+    // Match each sentinel block; everything outside is rendered as escaped text.
+    // Order matters: longest tag names first so e.g. "tool_result" wins over "tool".
+    const re = /<think>([\s\S]*?)<\/think>|<think>([\s\S]*)$|<tool_result>([\s\S]*?)<\/tool_result>|<tool name="([^"]*)">([\s\S]*?)<\/tool>/g;
     let out = "";
-    let i = 0;
-    while (i < raw.length) {
-        const open = raw.indexOf("<think>", i);
-        if (open === -1) { out += esc(raw.slice(i)); break; }
-        if (open > i) out += esc(raw.slice(i, open));
-        const close = raw.indexOf("</think>", open + 7);
-        if (close === -1) {
-            // Open tag without close yet — still streaming the reasoning section.
-            out += '<span class="thinking">' + esc(raw.slice(open + 7)) + "</span>";
-            break;
+    let last = 0;
+    let m;
+    while ((m = re.exec(raw)) !== null) {
+        if (m.index > last) out += esc(raw.slice(last, m.index));
+        if (m[1] !== undefined) {
+            out += '<span class="thinking">' + esc(m[1]) + '</span>';
+        } else if (m[2] !== undefined) {
+            // Still-streaming <think> with no close yet.
+            out += '<span class="thinking">' + esc(m[2]) + '</span>';
+        } else if (m[3] !== undefined) {
+            out += '<details class="tool-result"><summary>tool result</summary><pre>' + esc(m[3]) + '</pre></details>';
+        } else if (m[4] !== undefined) {
+            // <tool name="...">args</tool>
+            const name = esc(m[4]);
+            const args = esc(m[5]);
+            out += '<details class="tool-call" open><summary>called <code>' + name + '</code></summary><pre>' + args + '</pre></details>';
         }
-        out += '<span class="thinking">' + esc(raw.slice(open + 7, close)) + "</span>";
-        i = close + 8;
+        last = re.lastIndex;
+        if (m[2] !== undefined) { last = raw.length; break; }
     }
+    if (last < raw.length) out += esc(raw.slice(last));
     return out;
 };
 

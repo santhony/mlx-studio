@@ -228,15 +228,24 @@ async def _ollama_chat_stream(messages: list[dict], max_tokens: int) -> AsyncGen
         yield item
 
 
-async def _ds4_chat_stream(messages: list[dict], max_tokens: int) -> AsyncGenerator[str, None]:
+async def _ds4_chat_stream(
+    messages: list[dict],
+    max_tokens: int,
+    tools: list[dict] | None = None,
+    tool_choice: str | dict | None = None,
+) -> AsyncGenerator[str, None]:
     """
     Stream chat completion from ds4-server, translating OpenAI SSE → our
     `data: <token>\\n\\n` contract. DS4 emits standard OpenAI chunks:
-        data: {"choices":[{"delta":{"content":"...","reasoning_content":"..."}}]}
+        data: {"choices":[{"delta":{"content":"...","reasoning_content":"...",
+                                    "tool_calls":[{...}]}}]}
         data: [DONE]
-    Reasoning-mode tokens (`delta.reasoning_content`) are wrapped with
-    `<think>` / `</think>` sentinel tokens so the UI can style them
-    differently from the final answer.
+    Translation rules:
+      • Reasoning tokens are wrapped with `<think>` / `</think>` sentinels.
+      • Tool-call deltas are buffered per `index` and, once the model signals
+        completion (finish_reason or stream end), emitted as a single
+        `<tool_call>{...json...}</tool_call>` sentinel containing the full
+        OpenAI tool call object. The chat router executes the tool.
     """
     q: asyncio.Queue = asyncio.Queue()
 
@@ -245,13 +254,35 @@ async def _ds4_chat_stream(messages: list[dict], max_tokens: int) -> AsyncGenera
 
     async def _read_stream():
         client = _get_ds4_client()
-        payload = {
+        payload: dict = {
             "model": DS4_MODEL,
             "messages": messages,
             "stream": True,
             "max_tokens": max_tokens,
         }
+        if tools:
+            payload["tools"] = tools
+        if tool_choice is not None:
+            payload["tool_choice"] = tool_choice
         in_thinking = False
+        # Buffered tool calls keyed by stream index. Each value accumulates
+        # id, name, and arguments as deltas arrive.
+        pending_calls: dict[int, dict] = {}
+
+        async def _flush_pending() -> None:
+            for idx in sorted(pending_calls.keys()):
+                call = pending_calls[idx]
+                if not call.get("name"):
+                    continue
+                sentinel = {
+                    "id": call.get("id", f"call_{idx}"),
+                    "name": call["name"],
+                    "arguments": call.get("arguments", ""),
+                }
+                # Encode as JSON on a single line so the sentinel fits one SSE event.
+                await q.put(f"data: <tool_call>{json.dumps(sentinel, ensure_ascii=False)}</tool_call>\n\n")
+            pending_calls.clear()
+
         try:
             async with client.stream("POST", "/v1/chat/completions", json=payload) as resp:
                 if resp.status_code != 200:
@@ -271,9 +302,12 @@ async def _ds4_chat_stream(messages: list[dict], max_tokens: int) -> AsyncGenera
                     choices = chunk.get("choices") or []
                     if not choices:
                         continue
-                    delta = choices[0].get("delta", {}) or {}
+                    choice = choices[0]
+                    delta = choice.get("delta", {}) or {}
                     reasoning = delta.get("reasoning_content") or ""
                     content = delta.get("content") or ""
+                    tool_call_deltas = delta.get("tool_calls") or []
+
                     if reasoning:
                         if not in_thinking:
                             await q.put("data: <think>\n\n")
@@ -284,6 +318,23 @@ async def _ds4_chat_stream(messages: list[dict], max_tokens: int) -> AsyncGenera
                             await q.put("data: </think>\n\n")
                             in_thinking = False
                         await q.put(f"data: {_escape(content)}\n\n")
+
+                    for tc in tool_call_deltas:
+                        idx = tc.get("index", 0)
+                        slot = pending_calls.setdefault(idx, {"arguments": ""})
+                        if tc.get("id"):
+                            slot["id"] = tc["id"]
+                        fn = tc.get("function") or {}
+                        if fn.get("name"):
+                            slot["name"] = fn["name"]
+                        if fn.get("arguments") is not None:
+                            slot["arguments"] += fn["arguments"]
+
+                    if choice.get("finish_reason") == "tool_calls":
+                        if in_thinking:
+                            await q.put("data: </think>\n\n")
+                            in_thinking = False
+                        await _flush_pending()
         except httpx.ConnectError:
             await q.put("data: ERROR: cannot connect to ds4-server — is it running on " + DS4_HOST + "?\n\n")
         except Exception as exc:  # noqa: BLE001
@@ -291,6 +342,8 @@ async def _ds4_chat_stream(messages: list[dict], max_tokens: int) -> AsyncGenera
         finally:
             if in_thinking:
                 await q.put("data: </think>\n\n")
+            # Some servers omit finish_reason on tool_calls; flush whatever buffered.
+            await _flush_pending()
             await q.put(None)
 
     asyncio.create_task(_read_stream())
@@ -306,13 +359,24 @@ async def _ds4_chat_stream(messages: list[dict], max_tokens: int) -> AsyncGenera
 # ── Pydantic models ────────────────────────────────────────────────────────────
 
 class Message(BaseModel):
+    # role: "system" | "user" | "assistant" | "tool"
     role: str
-    content: str
+    # content is optional for assistant messages that only contain tool_calls,
+    # and is the tool result string when role == "tool".
+    content: str | None = None
+    # Present when role == "assistant" and the model called tools.
+    tool_calls: list[dict] | None = None
+    # Present when role == "tool" — id of the assistant tool_call this answers.
+    tool_call_id: str | None = None
 
 
 class ChatRequest(BaseModel):
     messages: list[Message]
     max_tokens: int = DEFAULT_MAX_TOKENS
+    # OpenAI-format tool schemas. Only honored on the DS4 backend; ignored by
+    # MLX/Ollama paths (which will produce text-only responses).
+    tools: list[dict] | None = None
+    tool_choice: str | dict | None = None
 
 
 class CompleteRequest(BaseModel):
@@ -397,12 +461,22 @@ async def chat(req: ChatRequest):
     Stream a chat completion as SSE.
     Dispatches to MLX or Ollama based on BACKEND config.
     """
-    messages = [{"role": m.role, "content": m.content} for m in req.messages]
+    # Build messages preserving optional fields needed for tool-calling round-trips.
+    messages: list[dict] = []
+    for m in req.messages:
+        d: dict = {"role": m.role}
+        if m.content is not None:
+            d["content"] = m.content
+        if m.tool_calls is not None:
+            d["tool_calls"] = m.tool_calls
+        if m.tool_call_id is not None:
+            d["tool_call_id"] = m.tool_call_id
+        messages.append(d)
 
     if BACKEND == "ollama":
         gen = _ollama_chat_stream(messages, req.max_tokens)
     elif BACKEND == "ds4":
-        gen = _ds4_chat_stream(messages, req.max_tokens)
+        gen = _ds4_chat_stream(messages, req.max_tokens, req.tools, req.tool_choice)
     else:
         # MLX: apply chat template and stream
         if _model is None:

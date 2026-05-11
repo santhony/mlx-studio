@@ -188,3 +188,44 @@ body:has(#messages) .main-content {
     color: var(--accent);
     margin-bottom: 0.25rem;
 }
+
+/* Tool-call / tool-result blocks rendered inside assistant messages. */
+.msg-content details.tool-call,
+.msg-content details.tool-result {
+    margin: 0.5rem 0;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.02);
+    font-size: 0.88em;
+}
+.msg-content details.tool-call > summary,
+.msg-content details.tool-result > summary {
+    cursor: pointer;
+    padding: 0.35rem 0.6rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    font-size: 0.72em;
+    letter-spacing: 0.06em;
+    user-select: none;
+}
+.msg-content details.tool-call > summary code,
+.msg-content details.tool-result > summary code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    color: var(--accent);
+    text-transform: none;
+    letter-spacing: 0;
+    font-size: 1.05em;
+}
+.msg-content details.tool-call > pre,
+.msg-content details.tool-result > pre {
+    margin: 0;
+    padding: 0.5rem 0.75rem;
+    border-top: 1px solid var(--border);
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    color: var(--text);
+    max-height: 280px;
+    overflow: auto;
+}
+.msg-content details.tool-result { border-left: 2px solid var(--accent); }

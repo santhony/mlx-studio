@@ -229,3 +229,20 @@ body:has(#messages) .main-content {
     overflow: auto;
 }
 .msg-content details.tool-result { border-left: 2px solid var(--accent); }
+
+/* Inline placeholder shown in the assistant bubble while the first token is
+   in flight. DS4 prefill on long contexts can take a minute or two; the
+   elapsed-time counter makes it obvious the stream is alive, not hung. */
+.waiting-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--text-muted);
+    font-size: 0.85em;
+}
+.waiting-label { font-style: italic; }
+.waiting-timer {
+    font-variant-numeric: tabular-nums;
+    color: var(--accent);
+    font-weight: 500;
+}

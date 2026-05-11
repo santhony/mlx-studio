@@ -14,6 +14,7 @@ Routes:
 """
 
 import json
+import re
 import sqlite3
 from typing import AsyncGenerator
 
@@ -33,6 +34,12 @@ TEXT_SERVER = "http://127.0.0.1:8766"
 # Maximum tool-call rounds per user turn. Prevents runaway loops if the model
 # never decides to stop calling tools.
 MAX_TOOL_ROUNDS = 6
+
+# How many of the most-recent history messages (user + assistant) to send to
+# the model on each turn. System messages and the in-progress tool-loop
+# extension are always included. Keeps long sessions responsive — a single
+# 38k-token prefill takes ~2.5 min cold on M-series Metal.
+MAX_HISTORY_MESSAGES = 30
 
 
 # ── Session helpers ────────────────────────────────────────────────────────────
@@ -90,8 +97,18 @@ async def _proxy_sse(
     `<tool>` / `<tool_result>` sentinels.
     """
     # Retrieve history + assemble messages list, with optional skills prompt.
+    # Cap to the most-recent MAX_HISTORY_MESSAGES messages so long sessions
+    # don't pay a multi-minute prefill cost on every turn.
     history = _get_messages(conn, session_id)
-    msg_list = [{"role": m["role"], "content": m["content"]} for m in history]
+    if len(history) > MAX_HISTORY_MESSAGES:
+        history = history[-MAX_HISTORY_MESSAGES:]
+    msg_list = [
+        {
+            "role": m["role"],
+            "content": _clean_history_content(m["content"]) if m["role"] == "assistant" else m["content"],
+        }
+        for m in history
+    ]
     if msg_list:
         last_user = next(
             (m["content"] for m in reversed(history) if m["role"] == "user"),
@@ -234,6 +251,44 @@ def _safe(s: str) -> str:
     return s.replace("</tool>", "</tool >").replace("</tool_result>", "</tool_result >")
 
 
+# Match a past tool call paired with its result. Result is optional because
+# (rare) early streams may have been truncated before persistence completed.
+_TOOL_PAIR_RE = re.compile(
+    r'<tool name="([^"]*)">(.*?)</tool>\s*(?:<tool_result>(.*?)</tool_result>)?',
+    re.DOTALL,
+)
+_THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
+
+
+def _clean_history_content(content: str) -> str:
+    """
+    Sanitize an assistant message before sending it back to the model on a
+    later turn.
+
+    Why: this app persists tool invocations as visible sentinels
+    (`<tool name="...">JSON</tool><tool_result>...</tool_result>`) for UI
+    rendering. Replaying those raw sentinels in the chat history teaches the
+    model to imitate the (wrong, app-specific) markup instead of emitting
+    proper OpenAI tool_calls. We rewrite each pair as a brief narrative
+    block so the model still sees what happened without copying the syntax.
+
+    `<think>` blocks are dropped entirely; per DeepSeek convention, prior
+    reasoning is not carried forward into the next turn's prompt.
+    """
+    def _pair_to_narrative(m: re.Match) -> str:
+        name = m.group(1)
+        args = (m.group(2) or "").strip()
+        result = (m.group(3) or "(no result captured)").strip()
+        # Truncate large tool results so history stays reasonable.
+        if len(result) > 4000:
+            result = result[:4000] + f"\n[…truncated, full length {len(m.group(3) or '')}]"
+        return f"\n[called {name} with arguments {args}; result:\n{result}\n]\n"
+
+    cleaned = _TOOL_PAIR_RE.sub(_pair_to_narrative, content)
+    cleaned = _THINK_RE.sub("", cleaned)
+    return cleaned.strip()
+
+
 # ── Routes ─────────────────────────────────────────────────────────────────────
 
 @router.get("/", response_class=HTMLResponse)
@@ -303,20 +358,36 @@ async def send_message(session_id: int, request: Request):
     <div class="msg-content">{escaped_content}</div>
 </div>
 <div class="msg msg-assistant">
-    <div class="msg-content" id="streaming-{msg_id}"><span class="spinner"></span></div>
+    <div class="msg-content" id="streaming-{msg_id}">
+        <span class="waiting-indicator">
+            <span class="spinner"></span>
+            <span class="waiting-label">waiting for model</span>
+            <span class="waiting-timer" id="streaming-timer-{msg_id}">0s</span>
+        </span>
+    </div>
 </div>
 <script>
 (function() {{
     const el = document.getElementById("streaming-{msg_id}");
+    const timerEl = document.getElementById("streaming-timer-{msg_id}");
+    const t0 = Date.now();
+    const tick = setInterval(function() {{
+        if (timerEl && timerEl.isConnected) {{
+            const s = Math.floor((Date.now() - t0) / 1000);
+            timerEl.textContent = s + "s";
+        }} else {{
+            clearInterval(tick);
+        }}
+    }}, 1000);
     const es = new EventSource("/chat/{session_id}/stream");
     let text = "";
     es.onmessage = function(e) {{
-        if (e.data === "[DONE]") {{ es.close(); return; }}
+        if (e.data === "[DONE]") {{ es.close(); clearInterval(tick); return; }}
         text += e.data.replace(/\\\\n/g, "\\n");
         el.innerHTML = window.renderChatContent(text);
         el.scrollIntoView({{block: "end"}});
     }};
-    es.onerror = function() {{ es.close(); }};
+    es.onerror = function() {{ es.close(); clearInterval(tick); }};
 }})();
 </script>
 """)

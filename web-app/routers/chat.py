@@ -32,10 +32,12 @@ templates = Jinja2Templates(directory="templates")
 TEXT_SERVER = "http://127.0.0.1:8766"
 
 # Maximum tool-call rounds per user turn. Prevents runaway loops if the
-# model never decides to stop calling tools. Tuned upward because exploration
-# tasks (find a file, then read it, then read its imports, …) genuinely need
-# more rounds than a single fetch_url-then-answer pattern.
-MAX_TOOL_ROUNDS = 15
+# model never decides to stop calling tools. Tuned for build-test cycles
+# (write file, test, fix, re-test) which can chew 3+ rounds per iteration.
+MAX_TOOL_ROUNDS = 25
+# When this many rounds remain, inject a one-shot warning telling the model
+# to wrap up. Without it, the cap arrives as a hard cutoff mid-trajectory.
+WRAP_UP_WARN_AT_REMAINING = 3
 
 # Caps applied to history before sending to the model. The smaller of the
 # two limits wins. A single 38k-token prefill takes ~2.5 min cold on M-series
@@ -157,8 +159,23 @@ async def _proxy_sse(
     persisted_chunks: list[str] = []
 
     for round_idx in range(MAX_TOOL_ROUNDS + 1):
+        # Inject a one-shot wrap-up notice when nearing the cap. The message
+        # isn't persisted — it's added only to this specific payload so the
+        # model sees it on the upcoming generation, without polluting history.
+        rounds_remaining = MAX_TOOL_ROUNDS - round_idx
+        payload_messages = msg_list
+        if 0 < rounds_remaining <= WRAP_UP_WARN_AT_REMAINING:
+            payload_messages = msg_list + [{
+                "role": "system",
+                "content": (
+                    f"NOTICE: You have {rounds_remaining} tool-call round(s) remaining for "
+                    "this turn. Stop calling tools and produce your final answer for the user "
+                    "summarizing what you've done so far. If the work isn't complete, say so "
+                    "clearly so the user can ask for the next step in a new turn."
+                ),
+            }]
         payload = {
-            "messages": msg_list,
+            "messages": payload_messages,
             # Thinking + tool args can easily exceed 2048; DS4 truncates with
             # "unterminated tool call" if a call mid-DSML hits the cap.
             "max_tokens": 8192,

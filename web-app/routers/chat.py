@@ -45,6 +45,12 @@ WRAP_UP_WARN_AT_REMAINING = 3
 MAX_HISTORY_MESSAGES = 30
 MAX_HISTORY_CHARS = 60_000  # ~roughly 15k tokens
 
+# Per-tool-result cap inside the active turn's loop. Set generously — DS4
+# supports up to ~1M tokens, our ctx allocation is well above this floor.
+# The cap is here as a defense against pathological cases (a 10 MB log
+# file, a binary blob read by accident), not as a normal constraint.
+MAX_TOOL_RESULT_CHARS = 200_000
+
 
 # ── Session helpers ────────────────────────────────────────────────────────────
 
@@ -263,12 +269,23 @@ async def _proxy_sse(
                 call.get("arguments", ""),
                 allowed_dirs,
             )
+            # Cap what goes back to the model so two large file reads can't
+            # push the next payload over the 100k ctx and 500 the whole turn.
+            # The visible UI block keeps the full result for the human.
+            if len(result) > MAX_TOOL_RESULT_CHARS:
+                model_result = (
+                    result[:MAX_TOOL_RESULT_CHARS]
+                    + f"\n\n[…truncated to {MAX_TOOL_RESULT_CHARS} chars of {len(result)}. "
+                      "Re-call with a narrower path, smaller max_chars, or grep-style targeting if you need more.]"
+                )
+            else:
+                model_result = result
             visible_result = f"<tool_result>{_safe(result)}</tool_result>"
             persisted_chunks.append(visible_result)
             yield f"data: {visible_result.replace(chr(10), chr(92) + 'n')}\n\n"
             msg_list.append({
                 "role": "tool",
-                "content": result,
+                "content": model_result,
                 "tool_call_id": call.get("id", ""),
             })
 

@@ -20,7 +20,7 @@ echo "=== Starting Qwen Studio ==="
 if [ "${TEXT_BACKEND:-mlx}" = "ds4" ]; then
     DS4_DIR="${DS4_DIR:-$SCRIPT_DIR/../ds4}"
     DS4_PORT="${DS4_PORT:-8767}"
-    DS4_CTX="${DS4_CTX:-100000}"
+    DS4_CTX="${DS4_CTX:-393216}"
     DS4_KV_DIR="${DS4_KV_DIR:-$SCRIPT_DIR/data/ds4-kv}"
     DS4_KV_MB="${DS4_KV_MB:-8192}"
     DS4_URL="http://127.0.0.1:${DS4_PORT}"

@@ -115,7 +115,10 @@ SERVERS = {
         "args":       [
             "--host", "127.0.0.1",
             "--port", "8767",
-            "--ctx", "100000",
+            # DeepSeek V4 Flash supports 1M tokens; 393216 (the Think-Max
+            # threshold from the DS4 README) gives ~10 GiB of KV at startup
+            # and lots of headroom for long sessions and big tool results.
+            "--ctx", "393216",
             "--kv-disk-dir", "data/ds4-kv",
             "--kv-disk-space-mb", "8192",
         ],

@@ -48,6 +48,11 @@
             <label for="path">Path or URL</label>
             <input type="text" id="path" name="path" placeholder="Directory path or URL" required>
         </div>
+        <div style="flex-basis: 100%;"></div>
+        <label style="display: flex; align-items: center; gap: 0.4rem; color: var(--text-muted); font-size: 0.85rem; margin: 0;">
+            <input type="checkbox" name="treat_as_text" value="1">
+            <span>Treat all files as text (sniff NUL bytes; skip known-binary extensions). Directory sources only.</span>
+        </label>
         <button type="submit">Add Source</button>
     </form>
 </div>
@@ -63,6 +68,9 @@
                 <div style="margin-bottom: 0.5rem;">
                     <span style="display: inline-block; background: var(--surface); color: var(--text); padding: 0.2rem 0.6rem; border-radius: var(--radius); font-size: 0.75rem; margin-right: 0.5rem;">{{ source.source_type }}</span>
                     <code style="font-size: 0.85rem;">{{ source.path }}</code>
+                    {% if source.treat_as_text %}
+                    <span style="display: inline-block; background: rgba(124, 106, 240, 0.15); color: var(--accent); padding: 0.15rem 0.5rem; border-radius: var(--radius); font-size: 0.7rem; margin-left: 0.5rem;" title="Treat all files as text (sniff NUL bytes)">loose text</span>
+                    {% endif %}
                 </div>
                 <div style="color: var(--text-muted); font-size: 0.8rem;">
                     {{ source.chunk_count }} chunk{{ 's' if source.chunk_count != 1 else '' }} •

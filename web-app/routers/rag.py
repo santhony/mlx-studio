@@ -54,6 +54,7 @@ def _get_sources(conn: sqlite3.Connection, corpus_id: int) -> list[dict]:
             s.corpus_id,
             s.source_type,
             s.path,
+            s.treat_as_text,
             s.last_indexed_at,
             s.created_at,
             COUNT(c.id) as chunk_count
@@ -71,7 +72,7 @@ def _get_sources(conn: sqlite3.Connection, corpus_id: int) -> list[dict]:
 def _get_source(conn: sqlite3.Connection, source_id: int) -> dict | None:
     """Fetch single source."""
     row = conn.execute(
-        "SELECT id, corpus_id, source_type, path, last_indexed_at, created_at FROM corpus_sources WHERE id = ?",
+        "SELECT id, corpus_id, source_type, path, treat_as_text, last_indexed_at, created_at FROM corpus_sources WHERE id = ?",
         (source_id,),
     ).fetchone()
     return dict(row) if row else None
@@ -354,6 +355,9 @@ async def add_source(request: Request, corpus_id: int):
     form = await request.form()
     source_type = form.get("source_type", "").strip()
     path = form.get("path", "").strip()
+    # HTML checkboxes only appear in the form data when checked; presence
+    # of the field (any value) means the user opted in.
+    treat_as_text = 1 if form.get("treat_as_text") else 0
 
     if not source_type or not path:
         raise HTTPException(status_code=400, detail="Source type and path are required")
@@ -382,8 +386,8 @@ async def add_source(request: Request, corpus_id: int):
             )
 
     conn.execute(
-        "INSERT INTO corpus_sources (corpus_id, source_type, path) VALUES (?, ?, ?)",
-        (corpus_id, source_type, path),
+        "INSERT INTO corpus_sources (corpus_id, source_type, path, treat_as_text) VALUES (?, ?, ?, ?)",
+        (corpus_id, source_type, path, treat_as_text),
     )
     conn.commit()
 
@@ -613,7 +617,9 @@ async def send_rag_message(request: Request, corpus_id: int, session_id: int):
     es.onmessage = function(e) {{
         if (e.data === "[DONE]") {{ es.close(); return; }}
         text += e.data.replace(/\\\\n/g, "\\n");
-        contentEl.textContent = text;
+        // Use the shared renderer so <think>...</think> sentinels are
+        // rendered as muted italic blocks, matching the Chat tab.
+        contentEl.innerHTML = window.renderChatContent(text);
         contentEl.scrollIntoView({{block: "end"}});
     }};
 

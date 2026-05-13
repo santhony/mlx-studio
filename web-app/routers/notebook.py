@@ -185,12 +185,16 @@ async def _stream_code(
         yield f"event: message\ndata: ERROR: text server unavailable: {exc}\n\n"
         return
 
-    # Persist generated code to cell
+    # Persist generated code to cell. Strip any <think>...</think> the model
+    # may have emitted ahead of the code — the thinking was streamed live to
+    # the user, but the cell's persistent value is the runnable code only.
     complete_code = "".join(full_code)
-    if complete_code.strip():
+    import re
+    complete_code = re.sub(r"<think>[\s\S]*?</think>\s*", "", complete_code).strip()
+    if complete_code:
         conn.execute(
             "UPDATE cells SET code = ? WHERE id = ?",
-            (complete_code.strip(), cell_id),
+            (complete_code, cell_id),
         )
         conn.commit()
 
@@ -292,22 +296,34 @@ async def generate_code(notebook_id: int, cell_id: int, request: Request):
     # Return a fragment with a JS EventSource that streams tokens into the code block
     return HTMLResponse(f"""
 <div id="cell-code-{cell_id}" class="cell-code-block">
+    <div class="msg-content cell-thinking" id="thinking-content-{cell_id}" style="display:none; margin-bottom:0.5rem;"></div>
     <pre><code id="code-content-{cell_id}" class="language-python"></code></pre>
 </div>
 <div id="cell-output-{cell_id}" class="cell-output"></div>
 <script>
 (function() {{
-    const el = document.getElementById("code-content-{cell_id}");
+    const codeEl = document.getElementById("code-content-{cell_id}");
+    const thinkEl = document.getElementById("thinking-content-{cell_id}");
     const es = new EventSource("/notebook/{notebook_id}/cells/{cell_id}/stream");
-    let code = "";
+    let raw = "";
     es.onmessage = function(e) {{
         if (e.data === "[DONE]") {{
             es.close();
-            if (typeof Prism !== "undefined") Prism.highlightElement(el);
+            if (typeof Prism !== "undefined") Prism.highlightElement(codeEl);
             return;
         }}
-        code += e.data.replace(/\\\\n/g, "\\n");
-        el.textContent = code;
+        raw += e.data.replace(/\\\\n/g, "\\n");
+        // Split thinking from body so the <pre><code> only ever sees real code
+        // (Prism highlights it cleanly), while the thinking renders above as a
+        // muted italic block matching the Chat tab.
+        const parts = window.splitThinkAndBody(raw);
+        if (parts.thinking) {{
+            thinkEl.style.display = "";
+            thinkEl.innerHTML = '<span class="thinking">' +
+                parts.thinking.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") +
+                '</span>';
+        }}
+        codeEl.textContent = parts.body;
     }};
     es.onerror = function() {{ es.close(); }};
 }})();

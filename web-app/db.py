@@ -113,6 +113,7 @@ def init_schema(conn: sqlite3.Connection) -> None:
             corpus_id       INTEGER NOT NULL REFERENCES corpora(id) ON DELETE CASCADE,
             source_type     TEXT    NOT NULL CHECK(source_type IN ('directory', 'url', 'url_spider')),
             path            TEXT    NOT NULL,
+            treat_as_text   INTEGER NOT NULL DEFAULT 0,  -- if 1, drop the extension allowlist and sniff
             last_indexed_at TEXT,
             created_at      TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
         );
@@ -145,4 +146,14 @@ def init_schema(conn: sqlite3.Connection) -> None:
             created_at    TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
         );
     """)
+
+    # Lightweight migrations for additive columns. SQLite's ALTER TABLE ADD
+    # COLUMN can't be made idempotent in a single statement, so guard with
+    # PRAGMA table_info first.
+    def _has_column(table: str, col: str) -> bool:
+        return col in {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+
+    if not _has_column("corpus_sources", "treat_as_text"):
+        conn.execute("ALTER TABLE corpus_sources ADD COLUMN treat_as_text INTEGER NOT NULL DEFAULT 0")
+
     conn.commit()

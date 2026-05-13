@@ -561,11 +561,18 @@ async def embed(req: EmbedRequest):
         if _embed_model is None:
             await asyncio.get_running_loop().run_in_executor(None, _load_embed_model)
         try:
-            output = await asyncio.get_running_loop().run_in_executor(
-                None,
-                lambda: _embed_processor([req.text]),
-            )
-            embedding = output.text_embeds[0].tolist()
+            import mlx.core as mx
+
+            def _run() -> list[float]:
+                # mlx_embeddings.load returns (model, tokenizer). The model
+                # output exposes .text_embeds — this is mean-pooled and L2
+                # normalized for similarity search. The tokenizer alone has
+                # no embedding attribute, which was the previous bug.
+                ids = _embed_processor.encode(req.text)
+                out = _embed_model(mx.array([ids]))
+                return out.text_embeds[0].tolist()
+
+            embedding = await asyncio.get_running_loop().run_in_executor(None, _run)
             return {"embedding": embedding}
         except Exception as exc:
             log.exception("embedding failed")

@@ -15,6 +15,9 @@
     <link rel="stylesheet" href="{{ url_for('static', path='/css/prism-dark.min.css') }}">
     <script src="{{ url_for('static', path='/js/prism.min.js') }}" data-manual defer></script>
     <script src="{{ url_for('static', path='/js/prism-python.min.js') }}" defer></script>
+    <!-- Shared chat-content renderer: parses <think>/<tool>/<tool_result>
+         sentinels into styled HTML. Used by Chat, RAG, and Notebook. -->
+    <script src="{{ url_for('static', path='/js/chat-render.js') }}" defer></script>
     <script>
         // Re-highlight code blocks whenever HTMX swaps in new content
         document.addEventListener("htmx:afterSwap", function(evt) {

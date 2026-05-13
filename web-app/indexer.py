@@ -32,8 +32,78 @@ CHUNK_OVERLAP = 200  # Character overlap between chunks
 SUPPORTED_EXTENSIONS = {".txt", ".md", ".pdf"}
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
 
+# Extensions to skip even when a source has treat_as_text enabled. These are
+# almost certainly binary; reading them as text wastes embed budget and
+# pollutes retrieval with metadata noise.
+BINARY_EXTENSIONS = {
+    # images / video / audio
+    ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff", ".webp", ".ico", ".svg",
+    ".mp3", ".wav", ".flac", ".ogg", ".m4a", ".aac",
+    ".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v",
+    # archives
+    ".zip", ".tar", ".gz", ".bz2", ".xz", ".7z", ".rar", ".lz", ".zst",
+    # compiled / binary objects
+    ".exe", ".dll", ".so", ".dylib", ".o", ".a", ".lib", ".pyc", ".pyo",
+    ".class", ".jar", ".war", ".wasm",
+    # databases / serialized
+    ".db", ".sqlite", ".sqlite3", ".idx", ".pack",
+    # fonts
+    ".woff", ".woff2", ".ttf", ".otf", ".eot",
+    # documents (use the .pdf branch instead for PDFs)
+    ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".key", ".numbers", ".pages",
+}
+
+# Directory names skipped during the recursive walk in loose mode. These
+# almost never contain content worth indexing and contain large amounts of
+# generated noise that would otherwise be read as text.
+SKIP_DIR_NAMES = {".git", "node_modules", "venv", "venv-image", "venv-text",
+                  "venv-web", "__pycache__", ".pytest_cache", ".mypy_cache",
+                  "dist", "build", ".idea", ".vscode"}
+
 
 # ── Pure text extraction functions ────────────────────────────────────────────
+
+def looks_binary(path: Path, sample_bytes: int = 8192) -> bool:
+    """
+    Heuristic: a file is binary if its first `sample_bytes` contain a NUL byte.
+    Almost all real text files (including ASCII, UTF-8, Latin-1, even old DOS
+    files) have no NUL bytes. Almost all binary files have at least one in
+    their header. Cheap to check and ~99% accurate in practice.
+    """
+    try:
+        with path.open("rb") as f:
+            chunk = f.read(sample_bytes)
+        return b"\x00" in chunk
+    except Exception:
+        return True  # unreadable → treat as skip-worthy
+
+
+def extract_text_loose(path: Path) -> str:
+    """
+    Best-effort text extraction for files without a known extension.
+
+    Strategy:
+      1. Skip if extension is in BINARY_EXTENSIONS.
+      2. Sniff for NUL bytes; bail if present.
+      3. Try UTF-8 with strict errors; if that fails, fall back to Latin-1
+         (which decodes any byte sequence, lossily but losslessly-mappable).
+
+    Returns "" for files that should be skipped (caller treats empty as skip).
+    """
+    suffix = path.suffix.lower()
+    if suffix in BINARY_EXTENSIONS:
+        return ""
+    if looks_binary(path):
+        return ""
+    try:
+        return path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        # Many old-school text files are CP437 / Latin-1 / DOS. Latin-1 maps
+        # every byte to a codepoint, so this never fails.
+        return path.read_text(encoding="latin-1")
+    except Exception:
+        return ""
+
 
 def extract_text_from_file(path: Path) -> str:
     """
@@ -306,12 +376,24 @@ def index_source(
                     "errors": errors,
                 }
 
-            # Collect files with supported extensions
-            files = [
-                f
-                for f in dir_path.rglob("*")
-                if f.is_file() and f.suffix.lower() in SUPPORTED_EXTENSIONS
-            ]
+            loose = bool(source.get("treat_as_text"))
+
+            # Collect candidate files. In strict mode (default), gate on
+            # the known-text extension allowlist. In loose mode, accept
+            # anything not in BINARY_EXTENSIONS or a skip-dir; the actual
+            # text-vs-binary decision is made by extract_text_loose via
+            # NUL-byte sniffing.
+            def _candidate(f: Path) -> bool:
+                if not f.is_file():
+                    return False
+                # Skip files inside well-known noise dirs (loose mode only).
+                if loose and any(part in SKIP_DIR_NAMES for part in f.parts):
+                    return False
+                if loose:
+                    return f.suffix.lower() not in BINARY_EXTENSIONS
+                return f.suffix.lower() in SUPPORTED_EXTENSIONS
+
+            files = [f for f in dir_path.rglob("*") if _candidate(f)]
 
             for file_path in files:
                 try:
@@ -322,7 +404,13 @@ def index_source(
                         log.warning(error_msg)
                         continue
 
-                    text = extract_text_from_file(file_path)
+                    # Loose mode uses the best-effort extractor that sniffs
+                    # for NUL bytes and falls back to Latin-1; strict mode
+                    # uses the extension-keyed extractor.
+                    if loose and file_path.suffix.lower() not in SUPPORTED_EXTENSIONS:
+                        text = extract_text_loose(file_path)
+                    else:
+                        text = extract_text_from_file(file_path)
                     if not text.strip():
                         log.debug("skipping empty file: %s", file_path.name)
                         continue

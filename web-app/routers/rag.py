@@ -103,15 +103,62 @@ def _get_corpora_with_counts(conn: sqlite3.Connection) -> list[dict]:
 # ── RAG Chat helpers ──────────────────────────────────────────────────────────────
 
 
-def _build_rag_system_prompt(chunks: list[dict]) -> str:
-    """Build a system prompt with numbered document references."""
+def _build_rag_system_prompt(chunks: list[dict], corpus_meta: dict | None = None) -> str:
+    """Build a system prompt with numbered document references plus a short
+    explanation of the RAG mechanism so the model doesn't refuse on the basis
+    of "I only see what's pasted in this conversation"."""
+
+    # Header that tells the model what it's looking at: a slice of a larger
+    # corpus that was selected by similarity to the current user message.
+    # Without this, DS4's training prior makes it deny having access to any
+    # corpus beyond the literal text in the message.
+    header_lines = [
+        "You are an assistant connected to a retrieval-augmented generation (RAG) loop.",
+        "",
+        "How this works (read carefully — this is not the standard chat setup):",
+        "  • A corpus of documents has been indexed on this machine.",
+        "  • For each user turn, the system embeds the user's question, retrieves",
+        "    the most semantically relevant chunks from the corpus, and includes",
+        "    them in your context below as numbered document excerpts.",
+        "  • The chunks shown to you CHANGE on each turn based on the new question.",
+        "  • You DO have access to this corpus — through this retrieval mechanism.",
+        "    Do NOT deny access to it. Do NOT say 'I only see what's in this",
+        "    conversation' or 'I am not connected to a database'. Both are wrong.",
+        "    What you CAN'T do is freely browse — you see what retrieval surfaces.",
+    ]
+    if corpus_meta:
+        header_lines.append("")
+        header_lines.append("Corpus statistics for this session:")
+        if corpus_meta.get("name"):
+            header_lines.append(f"  • Name: {corpus_meta['name']}")
+        if corpus_meta.get("total_chunks") is not None:
+            header_lines.append(f"  • Total chunks indexed: {corpus_meta['total_chunks']}")
+        if corpus_meta.get("sources"):
+            srcs = corpus_meta["sources"]
+            header_lines.append(f"  • Sources ({len(srcs)}):")
+            for s in srcs[:10]:
+                header_lines.append(f"      - {s}")
+            if len(srcs) > 10:
+                header_lines.append(f"      … and {len(srcs) - 10} more")
+
+    header_lines.append("")
+    header_lines.append("Answering rules:")
+    header_lines.append("  • Use ONLY the excerpts shown below for the current turn to answer.")
+    header_lines.append("  • Cite supporting excerpts with [1], [2], etc. matching the labels below.")
+    header_lines.append("  • If the excerpts don't contain the answer, say so honestly and")
+    header_lines.append("    suggest the user rephrase or ask something else from the corpus —")
+    header_lines.append("    do NOT claim the corpus itself is unavailable.")
+
+    header = "\n".join(header_lines)
+
     if not chunks:
         return (
-            "You are a helpful assistant. However, no relevant documents were found "
-            "to answer your question. Please let the user know that the documents don't contain relevant information."
+            header
+            + "\n\nNo relevant excerpts were retrieved for this turn. Tell the user "
+            "you couldn't find matching content in the corpus and invite them to "
+            "rephrase or try a different angle."
         )
 
-    # Build document sections with numbered references
     doc_sections = []
     for i, chunk in enumerate(chunks, start=1):
         source_file = chunk.get("source_file", "unknown")
@@ -122,12 +169,26 @@ def _build_rag_system_prompt(chunks: list[dict]) -> str:
         )
 
     docs_text = "\n\n".join(doc_sections)
+    return f"{header}\n\nRetrieved excerpts for this turn:\n\n{docs_text}"
 
-    return f"""You are a helpful assistant. Answer the user's question using ONLY the document excerpts provided below. Cite your sources using [1], [2], etc. markers. If the documents don't contain relevant information, say so.
 
-Document excerpts:
-
-{docs_text}"""
+def _corpus_meta(conn: sqlite3.Connection, corpus_id: int) -> dict:
+    """Summary stats about a corpus, for inclusion in the RAG system prompt."""
+    name_row = conn.execute("SELECT name FROM corpora WHERE id = ?", (corpus_id,)).fetchone()
+    total = conn.execute(
+        "SELECT COUNT(*) AS n FROM corpus_chunks WHERE corpus_id = ?", (corpus_id,),
+    ).fetchone()["n"]
+    sources = [
+        r["path"]
+        for r in conn.execute(
+            "SELECT path FROM corpus_sources WHERE corpus_id = ? ORDER BY id", (corpus_id,),
+        )
+    ]
+    return {
+        "name": name_row["name"] if name_row else None,
+        "total_chunks": total,
+        "sources": sources,
+    }
 
 
 def _get_rag_sessions(conn: sqlite3.Connection, corpus_id: int) -> list[dict]:
@@ -213,8 +274,10 @@ async def _rag_proxy_sse(
         # Wrap synchronous retrieve_chunks in asyncio.to_thread to avoid blocking
         chunks = await asyncio.to_thread(retrieve_chunks, conn, corpus_id, last_user, 5)
 
-    # Build system prompt with retrieved chunks
-    system_prompt = _build_rag_system_prompt(chunks)
+    # Build system prompt with retrieved chunks + corpus metadata so the
+    # model knows it's inside a RAG loop and what corpus is connected.
+    corpus_meta = _corpus_meta(conn, corpus_id)
+    system_prompt = _build_rag_system_prompt(chunks, corpus_meta)
 
     # Construct message list: system prompt + prior messages
     msg_list = [{"role": "system", "content": system_prompt}]

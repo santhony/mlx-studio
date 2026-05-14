@@ -143,11 +143,18 @@ def _build_rag_system_prompt(chunks: list[dict], corpus_meta: dict | None = None
 
     header_lines.append("")
     header_lines.append("Answering rules:")
-    header_lines.append("  • Use ONLY the excerpts shown below for the current turn to answer.")
-    header_lines.append("  • Cite supporting excerpts with [1], [2], etc. matching the labels below.")
-    header_lines.append("  • If the excerpts don't contain the answer, say so honestly and")
-    header_lines.append("    suggest the user rephrase or ask something else from the corpus —")
+    header_lines.append("  • For QUESTIONS ABOUT THE CORPUS ITSELF (e.g. 'what corpus do you have',")
+    header_lines.append("    'how many chunks', 'what sources are indexed'), answer from the")
+    header_lines.append("    corpus statistics above. These questions do NOT require excerpts.")
+    header_lines.append("  • For QUESTIONS ABOUT THE CORPUS CONTENT (e.g. 'tell me about X',")
+    header_lines.append("    'who wrote Y', 'when did Z happen'), ground your answer in the")
+    header_lines.append("    retrieved excerpts below and cite them with [1], [2], etc.")
+    header_lines.append("  • If the content question is answerable from the excerpts, answer it.")
+    header_lines.append("    If it isn't, say so honestly and suggest the user rephrase —")
     header_lines.append("    do NOT claim the corpus itself is unavailable.")
+    header_lines.append("  • Do NOT refuse on the basis that 'the system prompt says to use only")
+    header_lines.append("    excerpts' when the user is asking about the corpus statistics; that")
+    header_lines.append("    rule applies to content questions only.")
 
     header = "\n".join(header_lines)
 

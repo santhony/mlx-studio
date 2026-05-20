@@ -233,6 +233,7 @@ async def _ds4_chat_stream(
     max_tokens: int,
     tools: list[dict] | None = None,
     tool_choice: str | dict | None = None,
+    think: bool | None = None,
 ) -> AsyncGenerator[str, None]:
     """
     Stream chat completion from ds4-server, translating OpenAI SSE → our
@@ -264,6 +265,12 @@ async def _ds4_chat_stream(
             payload["tools"] = tools
         if tool_choice is not None:
             payload["tool_choice"] = tool_choice
+        if think is not None:
+            # ds4-server accepts a top-level `think` boolean to enable or
+            # disable chain-of-thought generation. False is markedly faster
+            # for structured-output tasks since the reasoning trace is the
+            # bulk of generated tokens on those tasks.
+            payload["think"] = think
         in_thinking = False
         # Buffered tool calls keyed by stream index. Each value accumulates
         # id, name, and arguments as deltas arrive.
@@ -377,6 +384,10 @@ class ChatRequest(BaseModel):
     # MLX/Ollama paths (which will produce text-only responses).
     tools: list[dict] | None = None
     tool_choice: str | dict | None = None
+    # DS4-specific: when False, ds4-server skips chain-of-thought and emits
+    # only `content` (no `reasoning_content`). Useful for structured-output
+    # tasks where the thinking trace is pure overhead. Ignored by MLX/Ollama.
+    think: bool | None = None
 
 
 class CompleteRequest(BaseModel):
@@ -476,7 +487,7 @@ async def chat(req: ChatRequest):
     if BACKEND == "ollama":
         gen = _ollama_chat_stream(messages, req.max_tokens)
     elif BACKEND == "ds4":
-        gen = _ds4_chat_stream(messages, req.max_tokens, req.tools, req.tool_choice)
+        gen = _ds4_chat_stream(messages, req.max_tokens, req.tools, req.tool_choice, req.think)
     else:
         # MLX: apply chat template and stream
         if _model is None:

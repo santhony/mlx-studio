@@ -3,20 +3,19 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}Qwen Studio{% endblock %}</title>
+    <title>{% block title %}MLX Studio{% endblock %}</title>
     <link rel="stylesheet" href="{{ url_for('static', path='/css/main.css') }}">
     <!-- HTMX -->
     <script src="{{ url_for('static', path='/js/htmx.min.js') }}" defer></script>
-    <!-- HTMX SSE extension (for streaming chat/notebook) -->
+    <!-- HTMX SSE extension (for streaming chat/workspace) -->
     <script src="{{ url_for('static', path='/js/htmx-sse.js') }}" defer></script>
-    <!-- HTMX WebSocket extension (for agent live transcript) -->
-    <script src="{{ url_for('static', path='/js/htmx-ws.js') }}" defer></script>
     <!-- Prism.js syntax highlighting -->
     <link rel="stylesheet" href="{{ url_for('static', path='/css/prism-dark.min.css') }}">
     <script src="{{ url_for('static', path='/js/prism.min.js') }}" data-manual defer></script>
     <script src="{{ url_for('static', path='/js/prism-python.min.js') }}" defer></script>
     <!-- Shared chat-content renderer: parses <think>/<tool>/<tool_result>
-         sentinels into styled HTML. Used by Chat, RAG, and Notebook. -->
+         sentinels into styled HTML. Used by Chat and RAG (workspace tab
+         uses its own inline renderer). -->
     <script src="{{ url_for('static', path='/js/chat-render.js') }}" defer></script>
     <script>
         // Re-highlight code blocks whenever HTMX swaps in new content
@@ -29,13 +28,12 @@
 </head>
 <body>
     <nav class="nav">
-        <a href="/" class="nav-brand">Qwen Studio</a>
+        <a href="/" class="nav-brand">MLX Studio</a>
         <div class="nav-links">
             <a href="/image">Image</a>
             <a href="/chat">Chat</a>
-            <a href="/notebook">Notebook</a>
+            <a href="/workspace">Workspace</a>
             <a href="/rag">RAG</a>
-            <a href="/agents">Agents</a>
             <a href="/skills">Skills</a>
             <a href="/finetune">Fine-tune</a>
             <a href="/settings">Settings</a>

@@ -223,7 +223,7 @@ def retrieve_skills(
 def format_skills_for_context(skills: list[dict]) -> str:
     """
     Format retrieved skills as a system context string for injection
-    into chat/notebook prompts.
+    into chat/workspace prompts.
     """
     if not skills:
         return ""

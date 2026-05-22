@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Settings — Qwen Studio{% endblock %}
+{% block title %}Settings — MLX Studio{% endblock %}
 {% block content %}
 <h1>Settings</h1>
 
@@ -23,13 +23,6 @@
                 {% include "server_status_badge.html" %}
             </td>
         </tr>
-        <tr style="border-bottom: 1px solid var(--border);">
-            <td style="padding: 0.75rem 0; font-weight: 500;">DS4 server <span style="color: var(--text-muted); font-size: 0.8rem;">(port 8767, only when backend is DS4)</span></td>
-            <td style="padding: 0.75rem 0; text-align: right;">
-                {% set name = "ds4" %}{% set status = ds4_status %}
-                {% include "server_status_badge.html" %}
-            </td>
-        </tr>
         <tr>
             <td style="padding: 0.75rem 0; font-weight: 500;">Web app <span style="color: var(--text-muted); font-size: 0.8rem;">(port 8080)</span></td>
             <td style="padding: 0.75rem 0; text-align: right;">
@@ -44,10 +37,8 @@
 
 <h2>Text Model</h2>
 <p style="color: var(--text-muted); margin-bottom: 1rem; font-size: 0.9rem;">
-    Saved to <code>data/config.env</code>. Takes effect on next text-server restart.
+    Saved to <code>data/config.env</code>. Takes effect on next server restart.
     Ollama models require <code>ollama serve</code> running and the model pulled.
-    DS4 requires the <code>antirez/ds4</code> repo built at <code>../ds4/</code> with <code>ds4flash.gguf</code> downloaded;
-    starting the text-server will launch <code>ds4-server</code> on port 8767 automatically (first load ~1&ndash;3 min for the 81 GB model).
 </p>
 <div class="card" style="margin-bottom: 2rem;">
     <form method="post" action="/settings/model/text" style="display: flex; gap: 0.75rem; align-items: flex-end;">
@@ -64,13 +55,6 @@
                 <optgroup label="Ollama (local server)">
                 {% for backend, id, label in text_models %}
                 {% if backend == "ollama" %}
-                <option value="{{ backend }}:{{ id }}" {% if backend + ':' + id == current_selection %}selected{% endif %}>{{ label }}</option>
-                {% endif %}
-                {% endfor %}
-                </optgroup>
-                <optgroup label="DS4 (DeepSeek V4 Flash, antirez/ds4)">
-                {% for backend, id, label in text_models %}
-                {% if backend == "ds4" %}
                 <option value="{{ backend }}:{{ id }}" {% if backend + ':' + id == current_selection %}selected{% endif %}>{{ label }}</option>
                 {% endif %}
                 {% endfor %}

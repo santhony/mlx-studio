@@ -1,7 +1,7 @@
 """
 skills.py router — Read-only view of all skills and their DB status.
 
-Shows which skills were injected in the most recent chat or notebook request.
+Shows which skills were injected in the most recent chat or workspace request.
 Does not allow editing — the filesystem is the interface.
 """
 

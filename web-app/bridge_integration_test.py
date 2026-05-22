@@ -21,8 +21,8 @@ from bridge import Bridge, CATEGORY_SAFE, CATEGORY_UNSAFE
 
 async def test_full_cycle():
     allowed = [
-        "/Users/santhony/Documents/dev_claude/qwen-studio/data/skills",
-        "/Users/santhony/Documents/dev_claude/qwen-studio/data/workspace",
+        "/Users/santhony/Documents/dev_claude/mlx-studio/data/skills",
+        "/Users/santhony/Documents/dev_claude/mlx-studio/data/workspace",
         "/Users/santhony/Documents/dev_claude",
     ]
 
@@ -37,7 +37,7 @@ async def test_full_cycle():
     print("\n--- Step 2: Simulate DeepSeek reasoning with a tool call ---")
     msg = """Let me check the workspace directory to understand the project structure.
 
-<tool>{"tool": "filesystem_list", "args": {"path": "/Users/santhony/Documents/dev_claude/qwen-studio/data/workspace"}}</tool>
+<tool>{"tool": "filesystem_list", "args": {"path": "/Users/santhony/Documents/dev_claude/mlx-studio/data/workspace"}}</tool>
 
 Based on the contents, I'll plan the next steps.
 """

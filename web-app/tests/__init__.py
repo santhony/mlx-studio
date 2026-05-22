@@ -1,1 +1,1 @@
-"""Test suite for qwen-studio web-app."""
+"""Test suite for mlx-studio web-app."""

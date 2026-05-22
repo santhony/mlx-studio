@@ -1,5 +1,5 @@
 """
-main.py — Qwen Studio web application.
+main.py — MLX Studio web application.
 
 FastAPI app running on 127.0.0.1:8080. Proxies to:
   - qwen-image-server: 127.0.0.1:8765
@@ -23,15 +23,15 @@ from fastapi.templating import Jinja2Templates
 from db import get_connection, init_schema
 from routers import image as image_router
 from routers import chat as chat_router
-from routers import notebook as notebook_router
 from routers import skills as skills_router
-from routers import agents as agents_router
 from routers import settings as settings_router
 from routers import finetune as finetune_router
 from routers import rag as rag_router
 from routers import bridge as bridge_router
+from routers import workspace as workspace_router
 from routers.settings import init_default_allowlist
 from skills import embed_all_skills, SkillsWatcher
+from workspace_render import render_message
 
 logging.basicConfig(
     level=logging.INFO,
@@ -44,25 +44,31 @@ PORT = 8080
 IMAGE_SERVER = "http://127.0.0.1:8765"
 TEXT_SERVER = "http://127.0.0.1:8766"
 
-# Path to qwen-studio/ directory (parent of web-app/)
-STUDIO_ROOT = Path(__file__).resolve().parent.parent
+# Path to mlx-studio/ directory (parent of web-app/)
+STUDIO_ROOT = Path(__file__).parent.parent
 DB_PATH = STUDIO_ROOT / "data" / "studio.db"
 
 templates = Jinja2Templates(directory="templates")
+templates.env.globals["render_message"] = render_message
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    log.info("Qwen Studio web-app starting on %s:%d", HOST, PORT)
+    log.info("MLX Studio web-app starting on %s:%d", HOST, PORT)
 
-    # SQLite
-    conn = get_connection(DB_PATH)
-    init_schema(conn)
-    app.state.db = conn
-    app.state.studio_root = STUDIO_ROOT
+    # SQLite: allow tests to inject a mock connection via app.state.db
+    # before the lifespan runs. Skip DB initialization if already set.
+    if not hasattr(app.state, "db"):
+        conn = get_connection(DB_PATH)
+        init_schema(conn)
+        app.state.db = conn
+        app.state.studio_root = STUDIO_ROOT
 
-    # Initialize default filesystem allowlist (if not already set)
-    init_default_allowlist(conn, STUDIO_ROOT)
+        # Initialize default filesystem allowlist (if not already set)
+        init_default_allowlist(conn, STUDIO_ROOT)
+    else:
+        # Tests have injected a connection; use it
+        conn = app.state.db
 
     # Skills: embed existing files, then watch for changes
     skills_dir = STUDIO_ROOT / "data" / "skills"
@@ -84,20 +90,19 @@ async def lifespan(app: FastAPI):
         app.state.skills_watcher.stop()
 
     conn.close()
-    log.info("Qwen Studio web-app shut down")
+    log.info("MLX Studio web-app shut down")
 
 
-app = FastAPI(title="Qwen Studio", lifespan=lifespan)
+app = FastAPI(title="MLX Studio", lifespan=lifespan)
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 app.include_router(image_router.router)
 app.include_router(chat_router.router)
-app.include_router(notebook_router.router)
 app.include_router(skills_router.router)
-app.include_router(agents_router.router)
 app.include_router(settings_router.router)
 app.include_router(finetune_router.router)
 app.include_router(rag_router.router)
+app.include_router(workspace_router.router)
 app.include_router(bridge_router.router)
 
 

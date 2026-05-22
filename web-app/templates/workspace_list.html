@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Workspaces — MLX Studio{% endblock %}
+{% block content %}
+<h1>Workspaces</h1>
+
+<div class="card">
+    <form method="post" action="/workspace/" style="display: flex; gap: 0.75rem; align-items: flex-end;">
+        <div class="form-group" style="flex: 1">
+            <label for="name">Workspace name</label>
+            <input type="text" id="name" name="name" placeholder="New workspace" required>
+        </div>
+        <button type="submit">New Workspace</button>
+    </form>
+</div>
+
+{% if workspaces %}
+<div>
+    {% for ws in workspaces %}
+    <div class="card" style="display: flex; align-items: center; justify-content: space-between; padding: 1rem 1.5rem; margin-bottom: 0.5rem;">
+        <a href="/workspace/{{ ws.id }}" style="color: var(--text); text-decoration: none; flex: 1; min-width: 0;">
+            <strong>{{ ws.name }}</strong>
+            {% if ws.summary %}
+            <div style="color: var(--text-muted); font-size: 0.8rem; margin-top: 0.25rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                {{ ws.summary }}
+            </div>
+            {% endif %}
+            <span style="color: var(--text-muted); font-size: 0.8rem; margin-left: 1rem;">{{ ws.last_active_at }}</span>
+        </a>
+        <form method="post" action="/workspace/{{ ws.id }}/delete"
+              hx-delete="/workspace/{{ ws.id }}"
+              hx-confirm="Delete this workspace? Its directory will be removed."
+              hx-target="closest .card"
+              hx-swap="outerHTML swap:1s"
+              style="margin: 0;">
+            <button type="submit" class="secondary" style="padding: 0.25rem 0.75rem; font-size: 0.8rem;">Delete</button>
+        </form>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<p style="color: var(--text-muted)">No workspaces yet. Create one above to get started.</p>
+{% endif %}
+{% endblock %}

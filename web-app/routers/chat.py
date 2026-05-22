@@ -150,7 +150,7 @@ async def _proxy_sse(
     msg_list.insert(0, {
         "role": "system",
         "content": (
-            "You run inside a local Qwen Studio session. The tools listed in this "
+            "You run inside a local MLX Studio session. The tools listed in this "
             "request are real, executable, and authorized by the user. When a task "
             "would benefit from web access, code execution, or filesystem access, "
             "CALL the corresponding tool — do not refuse. Filesystem tools are "

@@ -1,7 +1,7 @@
 """
-bridge.py — Router that exposes the Bridge as a Qwen Studio endpoint.
+bridge.py — Router that exposes the Bridge as a MLX Studio endpoint.
 
-Allows you to feed DeepSeek messages from the chat into Qwen Studio's sandbox,
+Allows you to feed DeepSeek messages from the chat into MLX Studio's sandbox,
 get tool execution results, and feed them back.
 
 Endpoint:

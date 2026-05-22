@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Skills — Qwen Studio{% endblock %}
+{% block title %}Skills — MLX Studio{% endblock %}
 {% block content %}
 <h1>Skills</h1>
 
@@ -10,7 +10,7 @@
     </p>
     <p style="color: var(--text-muted); font-size: 0.85rem;">
         Optional YAML frontmatter: <code>---</code> block with <code>name:</code> and <code>description:</code> fields.
-        The top 3 most relevant skills are injected into every chat and notebook request automatically.
+        The top 3 most relevant skills are injected into every chat and workspace request automatically.
     </p>
     {% if last_injected %}
     <p style="margin-top: 0.5rem; font-size: 0.85rem;">

@@ -21,6 +21,12 @@ def get_connection(db_path: Path) -> sqlite3.Connection:
 def init_schema(conn: sqlite3.Connection) -> None:
     """Create all tables if they do not exist. Idempotent."""
     conn.executescript("""
+        -- Phase 7 cleanup: vestigial Notebook + Agent tables removed
+        DROP TABLE IF EXISTS cells;
+        DROP TABLE IF EXISTS notebooks;
+        DROP TABLE IF EXISTS agent_steps;
+        DROP TABLE IF EXISTS agent_jobs;
+
         CREATE TABLE IF NOT EXISTS images (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
             prompt      TEXT    NOT NULL,
@@ -42,39 +48,6 @@ def init_schema(conn: sqlite3.Connection) -> None:
             session_id  INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
             role        TEXT    NOT NULL CHECK(role IN ('user', 'assistant', 'system')),
             content     TEXT    NOT NULL,
-            created_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
-        );
-
-        CREATE TABLE IF NOT EXISTS notebooks (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            name        TEXT    NOT NULL,
-            created_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
-            updated_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
-        );
-
-        CREATE TABLE IF NOT EXISTS cells (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            notebook_id INTEGER NOT NULL REFERENCES notebooks(id) ON DELETE CASCADE,
-            position    INTEGER NOT NULL DEFAULT 0,
-            prompt      TEXT    NOT NULL DEFAULT '',
-            code        TEXT    NOT NULL DEFAULT '',
-            output      TEXT    NOT NULL DEFAULT '',
-            created_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
-        );
-
-        CREATE TABLE IF NOT EXISTS agent_jobs (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            task        TEXT    NOT NULL,
-            status      TEXT    NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','running','completed','failed')),
-            created_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
-        );
-
-        CREATE TABLE IF NOT EXISTS agent_steps (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            job_id      INTEGER NOT NULL REFERENCES agent_jobs(id) ON DELETE CASCADE,
-            type        TEXT    NOT NULL,
-            content     TEXT    NOT NULL,
-            approved    INTEGER,
             created_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
         );
 
@@ -113,7 +86,6 @@ def init_schema(conn: sqlite3.Connection) -> None:
             corpus_id       INTEGER NOT NULL REFERENCES corpora(id) ON DELETE CASCADE,
             source_type     TEXT    NOT NULL CHECK(source_type IN ('directory', 'url', 'url_spider')),
             path            TEXT    NOT NULL,
-            treat_as_text   INTEGER NOT NULL DEFAULT 0,  -- if 1, drop the extension allowlist and sniff
             last_indexed_at TEXT,
             created_at      TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
         );
@@ -145,6 +117,36 @@ def init_schema(conn: sqlite3.Connection) -> None:
             citations_json TEXT,
             created_at    TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
         );
+
+        CREATE TABLE IF NOT EXISTS workspaces (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            root_dir TEXT NOT NULL,
+            summary TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            last_active_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS workspace_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            workspace_id INTEGER NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+            role TEXT NOT NULL,
+            content TEXT NOT NULL DEFAULT '',
+            tool_calls_json TEXT NOT NULL DEFAULT '[]',
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS workspace_checkpoints (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            workspace_id INTEGER NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+            seq INTEGER NOT NULL,
+            message_id INTEGER REFERENCES workspace_messages(id) ON DELETE SET NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            UNIQUE(workspace_id, seq)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_workspace_messages_workspace ON workspace_messages(workspace_id, id);
+        CREATE INDEX IF NOT EXISTS idx_workspace_checkpoints_workspace ON workspace_checkpoints(workspace_id, seq);
     """)
 
     # Lightweight migrations for additive columns. SQLite's ALTER TABLE ADD
@@ -154,6 +156,8 @@ def init_schema(conn: sqlite3.Connection) -> None:
         return col in {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
 
     if not _has_column("corpus_sources", "treat_as_text"):
-        conn.execute("ALTER TABLE corpus_sources ADD COLUMN treat_as_text INTEGER NOT NULL DEFAULT 0")
+        conn.execute(
+            "ALTER TABLE corpus_sources ADD COLUMN treat_as_text INTEGER NOT NULL DEFAULT 0"
+        )
 
     conn.commit()

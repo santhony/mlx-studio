@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}RAG Chat: {{ corpus.name }} — Qwen Studio{% endblock %}
+{% block title %}RAG Chat: {{ corpus.name }} — MLX Studio{% endblock %}
 {% block content %}
 <div style="display: flex; gap: 1.5rem; height: calc(100vh - 120px);">
 
@@ -40,7 +40,7 @@
                     padding: 0.5rem 0; margin-bottom: 1rem;">
             {% for msg in messages %}
             <div class="msg msg-{{ msg.role }}">
-                <div class="msg-content" data-raw>{{ msg.content }}</div>
+                <div class="msg-content">{{ msg.content }}</div>
                 {% if msg.role == 'assistant' and msg.citations %}
                 <div class="msg-citations">
                     <details>

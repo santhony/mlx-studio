@@ -1,8 +1,9 @@
-# Qwen Studio
+# MLX Studio
 
 A local-first AI development environment for Apple Silicon. Image generation,
-chat, code notebooks, sandboxed agents, fine-tuning, and a RAG corpus pipeline
-— all served from a small set of FastAPI processes that bind only to 127.0.0.1.
+chat, a workspace tab that auto-executes tool calls against a sandboxed
+filesystem, fine-tuning, and a RAG corpus pipeline — all served from a small
+set of FastAPI processes that bind only to 127.0.0.1.
 
 > This project was implemented end-to-end by [Claude Code][cc] (Anthropic's CLI
 > coding agent) working from natural-language instructions. The human role has
@@ -18,10 +19,12 @@ chat, code notebooks, sandboxed agents, fine-tuning, and a RAG corpus pipeline
 - **Chat** — pluggable text backend: MLX (in-process), Ollama (proxy), or
   DS4 (DeepSeek V4 Flash via [antirez/ds4][ds4]). Backend is switchable from
   the Settings page.
-- **Code notebooks** — Jupyter-style cells with code execution and
-  Prism syntax highlighting.
-- **Agents** — sandboxed tool execution against an allowlisted filesystem
-  (skills, workspace).
+- **Workspace** — chat surface where the model auto-executes tool calls
+  against a per-workspace sandboxed directory. Built-in tools: `read_file`,
+  `write_file`, `edit_file`, `list_dir`, `run_python`, plus cross-tab tools
+  `query_rag` and `generate_image`. Every assistant turn snapshots the
+  workspace; a per-message Revert button restores state and truncates
+  history. Replaces the earlier Notebook + Agents tabs.
 - **Fine-tuning** — MLX LoRA fine-tuning jobs with progress streaming and
   checkpoint management.
 - **RAG** — create corpora, add sources (local directories, single URLs, or
@@ -47,8 +50,8 @@ Each Python server has its own venv. The text server's SSE contract
 (Ollama NDJSON, DS4 OpenAI SSE) are translated internally.
 
 DS4's reasoning-mode output is wrapped with `<think>...</think>` sentinel
-tokens so the chat UI can render the chain of thought as a separate muted
-block, distinct from the visible answer.
+tokens so the chat and workspace UIs can render the chain of thought as a
+collapsible muted block, distinct from the visible answer.
 
 ## Requirements
 
@@ -65,15 +68,15 @@ block, distinct from the visible answer.
 First-time setup, once per server:
 
 ```bash
-cd qwen-studio/qwen-image-server && ./setup.sh
-cd qwen-studio/qwen-text-server  && ./setup.sh
-cd qwen-studio/web-app           && ./setup.sh
+cd mlx-studio/qwen-image-server && ./setup.sh
+cd mlx-studio/qwen-text-server  && ./setup.sh
+cd mlx-studio/web-app           && ./setup.sh
 ```
 
 Then start everything:
 
 ```bash
-cd qwen-studio
+cd mlx-studio
 ./start.sh           # spawns the three servers (and ds4-server if configured)
 open http://127.0.0.1:8080
 ```
@@ -92,13 +95,13 @@ and is editable from the Settings page in the UI.
 1. Clone and build `antirez/ds4` as a sibling directory:
 
    ```bash
-   cd ..    # one level above qwen-studio
+   cd ..    # one level above mlx-studio
    git clone https://github.com/antirez/ds4.git
    cd ds4 && make           # Metal build, produces ./ds4-server
    ./download_model.sh q2   # ~81 GB GGUF for 128 GB Macs
    ```
 
-2. In Qwen Studio's Settings page, pick the **DS4** option in the model
+2. In MLX Studio's Settings page, pick the **DS4** option in the model
    dropdown, Save, then Stop and Start the text server. The web-app will
    launch `ds4-server` on port 8767 and wait for it to become ready before
    starting the text server.
@@ -106,7 +109,7 @@ and is editable from the Settings page in the UI.
 ## Project layout
 
 ```
-qwen-studio/
+mlx-studio/
   start.sh, stop.sh           # process management (PID files in data/logs/)
   qwen-image-server/          # FastAPI image server (port 8765)
   qwen-text-server/           # FastAPI text server (port 8766)
@@ -114,14 +117,19 @@ qwen-studio/
     main.py                   # entry, lifespan, status endpoints
     db.py                     # SQLite connection + schema init
     skills.py                 # skill embeddings + filesystem watcher
-    agent_tools.py            # sandboxed tool execution
     indexer.py                # RAG indexing (dirs, URLs, URL spider)
-    routers/                  # chat, image, notebook, agents, settings,
-                              #   finetune, rag, skills
+    workspace_runner.py       # workspace tool dispatcher + chat loop
+    workspace_tools.py        # path-scoped file ops + run_python
+    workspace_store.py        # workspace data-access helpers
+    workspace_checkpoint.py   # per-turn snapshot + revert
+    workspace_render.py       # markdown + bleach + collapsible blocks
+    routers/                  # chat, image, workspace, settings,
+                              #   finetune, rag, skills, bridge
     templates/                # Jinja2 HTML (HTMX-driven)
     static/                   # CSS + vendored JS (htmx, prism)
   data/                       # runtime state (mostly gitignored)
     studio.db                 # SQLite database
+    workspaces/<id>/          # per-workspace sandbox directory
     skills/                   # markdown skill files
     config.env                # backend selection
     logs/                     # server logs and PID files
@@ -141,8 +149,8 @@ intended to be useful context for anyone reading the code:
   defaults more than any individual house style.
 - Architectural decisions — three-server split, FastAPI everywhere, HTMX over
   a JS framework, MLX for text, `<think>` sentinels for the DS4 reasoning
-  stream — were made collaboratively in conversation, then implemented by
-  Claude.
+  stream, FCIS for the workspace runner — were made collaboratively in
+  conversation, then implemented by Claude.
 - Bugs are real bugs. They were also fixed by Claude. If you find one, an
   issue is welcome.
 

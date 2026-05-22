@@ -3,7 +3,7 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOG_DIR="$SCRIPT_DIR/data/logs"
 
-echo "=== Stopping Qwen Studio ==="
+echo "=== Stopping MLX Studio ==="
 
 stop_pid() {
     local name="$1"

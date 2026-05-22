@@ -1,5 +1,5 @@
 """
-bridge.py — Connects DeepSeek (remote reasoning) to Qwen Studio's agent sandbox.
+bridge.py — Connects DeepSeek (remote reasoning) to MLX Studio's agent sandbox.
 
 Protocol:
   DeepSeek outputs <tool>{"tool":"...","args":{...}}</tool> blocks
@@ -238,15 +238,15 @@ async def demo():
 
     # Test with real allowed_dirs from the DB
     allowed = [
-        "/Users/santhony/Documents/dev_claude/qwen-studio/data/skills",
-        "/Users/santhony/Documents/dev_claude/qwen-studio/data/workspace",
+        "/Users/santhony/Documents/dev_claude/mlx-studio/data/skills",
+        "/Users/santhony/Documents/dev_claude/mlx-studio/data/workspace",
         "/Users/santhony/Documents/dev_claude",
     ]
 
     bridge = Bridge(allowed_dirs=allowed, mode="auto")
 
     # Test 1: parsing
-    msg = "Let me check the project structure.\n<tool>{\"tool\": \"filesystem_list\", \"args\": {\"path\": \"/Users/santhony/Documents/dev_claude/qwen-studio/web-app\"}}</tool>"
+    msg = "Let me check the project structure.\n<tool>{\"tool\": \"filesystem_list\", \"args\": {\"path\": \"/Users/santhony/Documents/dev_claude/mlx-studio/web-app\"}}</tool>"
     print("1. Parse test:")
     parsed = bridge.parse_tool_call(msg)
     print(f"   Parsed: {parsed}")
@@ -259,15 +259,15 @@ async def demo():
 
     # Test 3: dispatch filesystem_read
     print("\n2. Dispatch test (filesystem_list):")
-    result = await bridge.execute({"tool": "filesystem_list", "args": {"path": "/Users/santhony/Documents/dev_claude/qwen-studio"}})
+    result = await bridge.execute({"tool": "filesystem_list", "args": {"path": "/Users/santhony/Documents/dev_claude/mlx-studio"}})
     print(f"   Result:\n{result}")
     assert "web-app" in result
 
     # Test 4: dispatch filesystem_read on a known file
     print("\n3. Dispatch test (filesystem_read):")
-    result = await bridge.execute({"tool": "filesystem_read", "args": {"path": "/Users/santhony/Documents/dev_claude/qwen-studio/CLAUDE.md"}})
+    result = await bridge.execute({"tool": "filesystem_read", "args": {"path": "/Users/santhony/Documents/dev_claude/mlx-studio/CLAUDE.md"}})
     print(f"   Result: {result[:200]}...")
-    assert "# Qwen Studio" in result
+    assert "# MLX Studio" in result
 
     # Test 5: python_exec
     print("\n4. Dispatch test (python_exec):")

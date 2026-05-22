@@ -1,7 +1,7 @@
 {% extends "base.html" %}
-{% block title %}Qwen Studio{% endblock %}
+{% block title %}MLX Studio{% endblock %}
 {% block content %}
-<h1>Qwen Studio</h1>
+<h1>MLX Studio</h1>
 <p style="color: var(--text-muted); margin-bottom: 2rem;">
     Local AI tools powered by Qwen models. All inference runs on-device.
 </p>
@@ -14,13 +14,9 @@
         <h2>💬 Chat</h2>
         <p style="color: var(--text-muted); font-size: 0.85rem;">Multi-turn chat with Qwen2.5-Coder-32B</p>
     </a>
-    <a href="/notebook" class="card" style="text-decoration: none; color: inherit;">
-        <h2>📓 Notebook</h2>
-        <p style="color: var(--text-muted); font-size: 0.85rem;">AI-generated code with inline execution</p>
-    </a>
-    <a href="/agents" class="card" style="text-decoration: none; color: inherit;">
-        <h2>🤖 Agents</h2>
-        <p style="color: var(--text-muted); font-size: 0.85rem;">Human-in-the-loop task automation</p>
+    <a href="/workspace" class="card" style="text-decoration: none; color: inherit;">
+        <h2>💼 Workspace</h2>
+        <p style="color: var(--text-muted); font-size: 0.85rem;">AI chat with auto-execute and checkpoints</p>
     </a>
     <a href="/skills" class="card" style="text-decoration: none; color: inherit;">
         <h2>🧠 Skills</h2>

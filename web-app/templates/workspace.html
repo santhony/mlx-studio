@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% block title %}{{ workspace.name }} — MLX Studio{% endblock %}
+{% block content %}
+<div class="container" style="max-width: 1000px; margin: 1rem auto; padding: 1rem;
+                              display: flex; flex-direction: column; height: calc(100vh - 5rem);">
+
+    <div style="display: flex; align-items: baseline; gap: 1rem; margin-bottom: 1rem;">
+        <a href="/workspace/" style="color: var(--text-muted);">← All workspaces</a>
+        <h1 style="margin: 0;">{{ workspace.name }}</h1>
+    </div>
+
+    <p style="color: var(--text-muted); margin: 0 0 1rem 0;">
+        <code>{{ workspace.root_dir }}</code>
+    </p>
+
+    <div id="messages" style="flex: 1; overflow-y: auto; display: flex; flex-direction: column;
+                              gap: 0.75rem; padding: 0.5rem 0;">
+        {% for msg in messages %}
+            {% include "_workspace_message.html" with context %}
+        {% else %}
+            <p style="color: var(--text-muted); text-align: center; margin: auto;">
+                Send a message to start. The model can read/write files in this
+                workspace and run Python.
+            </p>
+        {% endfor %}
+    </div>
+
+    <form id="workspace-form" style="display: flex; gap: 0.5rem; margin-top: 1rem;"
+          onsubmit="return submitWorkspaceMessage(event, {{ workspace.id }})">
+        <input type="text" name="content" id="workspace-input" required
+               placeholder="What should we work on?"
+               style="flex: 1; padding: 0.5rem;" autofocus />
+        <button type="submit" style="padding: 0.5rem 1rem;">Send</button>
+    </form>
+</div>
+
+<script>
+function appendMessage(role, content) {
+    const messages = document.getElementById('messages');
+    const empty = messages.querySelector('p[style*="margin: auto"]');
+    if (empty) empty.remove();
+
+    const div = document.createElement('div');
+    div.className = 'msg msg-' + role;
+    div.innerHTML = '<div class="msg-content"></div>';
+    const contentEl = div.querySelector('.msg-content');
+    contentEl.textContent = content;
+    messages.appendChild(div);
+    messages.scrollTop = messages.scrollHeight;
+    return contentEl;
+}
+
+function submitWorkspaceMessage(event, workspaceId) {
+    event.preventDefault();
+    const input = document.getElementById('workspace-input');
+    const userText = input.value.trim();
+    if (!userText) return false;
+
+    appendMessage('user', userText);
+    const assistantEl = appendMessage('assistant', '');
+    input.value = '';
+    input.disabled = true;
+
+    // POST the form via fetch and read the SSE stream
+    const formData = new FormData();
+    formData.append('content', userText);
+
+    fetch(`/workspace/${workspaceId}/messages/stream`, {
+        method: 'POST',
+        body: formData,
+    }).then(async (response) => {
+        if (!response.ok) {
+            assistantEl.textContent = '[error: ' + response.status + ']';
+            input.disabled = false;
+            input.focus();
+            return;
+        }
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            // SSE delimited by \n\n
+            let idx;
+            while ((idx = buffer.indexOf('\n\n')) >= 0) {
+                const event = buffer.slice(0, idx);
+                buffer = buffer.slice(idx + 2);
+                if (event.startsWith('data: ')) {
+                    const data = event.slice(6);
+                    if (data === '[DONE]') {
+                        // Re-fetch the rendered messages so markdown + tool blocks render.
+                        const messagesEl = document.getElementById('messages');
+                        fetch(`/workspace/${workspaceId}/messages-html`)
+                            .then(r => r.text())
+                            .then(html => {
+                                messagesEl.innerHTML = html;
+                                messagesEl.scrollTop = messagesEl.scrollHeight;
+                            });
+                        input.disabled = false;
+                        input.focus();
+                        return;
+                    }
+                    // Unescape the same way the server escaped on the way out
+                    // NOTE: ambiguous if token literally contains "\\n" (two chars). Inherited from chat.py SSE convention; revisit in Phase 5 with JSON encoding.
+                    assistantEl.textContent += data.replace(/\\n/g, '\n');
+                    document.getElementById('messages').scrollTop =
+                        document.getElementById('messages').scrollHeight;
+                }
+            }
+        }
+        input.disabled = false;
+        input.focus();
+    });
+    return false;
+}
+</script>
+{% endblock %}

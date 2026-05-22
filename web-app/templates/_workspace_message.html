@@ -1,0 +1,17 @@
+{# Per-message partial. Calls workspace_render.render_message to produce
+   the HTML for this message based on role + content + tool_calls. #}
+<div class="msg msg-{{ message.role }}" data-message-id="{{ message.id }}">
+    <div class="msg-content">
+        {{ render_message(role=message.role, content=message.content,
+                          tool_calls_json=message.tool_calls_json,
+                          workspace_id=workspace.id) | safe }}
+    </div>
+    {% if message.role == "user" and message.checkpoint_seq is defined and message.checkpoint_seq is not none %}
+    <button class="revert-btn"
+            hx-post="/workspace/{{ workspace.id }}/revert/{{ message.checkpoint_seq }}"
+            hx-confirm="Revert to before this message? Everything after will be lost."
+            hx-on::after-request="window.location.reload()">
+        Revert to before this
+    </button>
+    {% endif %}
+</div>

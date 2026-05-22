@@ -14,7 +14,7 @@ if [ -f "$CONFIG_FILE" ]; then
     source "$CONFIG_FILE"
 fi
 
-echo "=== Starting Qwen Studio ==="
+echo "=== Starting MLX Studio ==="
 
 # ── ds4-server (if backend is ds4) ────────────────────────────────────────────
 if [ "${TEXT_BACKEND:-mlx}" = "ds4" ]; then
@@ -158,5 +158,5 @@ check_health "qwen-image-server" "http://127.0.0.1:8765/health"
 check_health "qwen-text-server" "http://127.0.0.1:8766/health"
 
 echo ""
-echo "=== Qwen Studio running at http://127.0.0.1:8080 ==="
+echo "=== MLX Studio running at http://127.0.0.1:8080 ==="
 echo "Logs in $LOG_DIR/"

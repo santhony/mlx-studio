@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Fine-Tune Job #{{ job.id }} — Qwen Studio{% endblock %}
+{% block title %}Fine-Tune Job #{{ job.id }} — MLX Studio{% endblock %}
 {% block content %}
 <!-- WebSocket for live metrics -->
 <div hx-ext="ws" ws-connect="/finetune/{{ job.id }}/ws" style="display:none;"></div>

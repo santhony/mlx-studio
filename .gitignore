@@ -22,3 +22,6 @@ data/studio.db
 
 # macOS
 .DS_Store
+
+# Runtime PID files and server logs
+data/logs/
